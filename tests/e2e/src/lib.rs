@@ -935,4 +935,121 @@ mod tests {
         assert!(err.violations.iter().any(|v| v.field_path == "name"));
         assert!(err.violations.iter().any(|v| v.field_path == "email"));
     }
+
+    // ── Duration constraints ──────────────────────────────────────────
+
+    #[test]
+    fn duration_valid_passes() {
+        let msg = DurationConstraint {
+            timeout: buffa::MessageField::some(buffa_types::google::protobuf::Duration {
+                seconds: 30,
+                nanos: 0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn duration_too_short_fails() {
+        let msg = DurationConstraint {
+            timeout: buffa::MessageField::some(buffa_types::google::protobuf::Duration {
+                seconds: 0,
+                nanos: 500_000_000,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let err = msg.validate().unwrap_err();
+        assert!(err.violations.iter().any(|v| v.field_path == "timeout"));
+    }
+
+    #[test]
+    fn duration_too_long_fails() {
+        let msg = DurationConstraint {
+            timeout: buffa::MessageField::some(buffa_types::google::protobuf::Duration {
+                seconds: 61,
+                nanos: 0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let err = msg.validate().unwrap_err();
+        assert!(err.violations.iter().any(|v| v.field_path == "timeout"));
+    }
+
+    #[test]
+    fn duration_unset_skips_validation() {
+        let msg = DurationConstraint::default();
+        assert!(msg.validate().is_ok());
+    }
+
+    // ── Timestamp constraints ─────────────────────────────────────────
+
+    #[test]
+    fn timestamp_valid_passes() {
+        let msg = TimestampConstraint {
+            created_at: buffa::MessageField::some(buffa_types::google::protobuf::Timestamp {
+                seconds: 1_700_000_000,
+                nanos: 0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn timestamp_too_early_fails() {
+        let msg = TimestampConstraint {
+            created_at: buffa::MessageField::some(buffa_types::google::protobuf::Timestamp {
+                seconds: 999_999_999,
+                nanos: 0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let err = msg.validate().unwrap_err();
+        assert!(err.violations.iter().any(|v| v.field_path == "created_at"));
+    }
+
+    #[test]
+    fn timestamp_unset_skips_validation() {
+        let msg = TimestampConstraint::default();
+        assert!(msg.validate().is_ok());
+    }
+
+    // ── Any constraints ───────────────────────────────────────────────
+
+    #[test]
+    fn any_valid_type_url_passes() {
+        let msg = AnyConstraint {
+            payload: buffa::MessageField::some(buffa_types::google::protobuf::Any {
+                type_url: "type.googleapis.com/test.v1.User".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn any_invalid_type_url_fails() {
+        let msg = AnyConstraint {
+            payload: buffa::MessageField::some(buffa_types::google::protobuf::Any {
+                type_url: "type.googleapis.com/test.v1.Unknown".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let err = msg.validate().unwrap_err();
+        assert!(err.violations.iter().any(|v| v.field_path == "payload"));
+    }
+
+    #[test]
+    fn any_unset_skips_validation() {
+        let msg = AnyConstraint::default();
+        assert!(msg.validate().is_ok());
+    }
 }

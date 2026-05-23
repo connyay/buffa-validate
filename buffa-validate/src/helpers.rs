@@ -486,3 +486,215 @@ pub fn field_to_cel_value_uint(val: u64) -> cel::Value {
 pub fn field_to_cel_value_float(val: f64) -> cel::Value {
     cel::Value::Float(val)
 }
+
+// ── Duration / Timestamp helpers ──────────────────────────────────
+
+fn timeval_to_nanos(seconds: i64, nanos: i32) -> i128 {
+    (seconds as i128) * 1_000_000_000 + (nanos as i128)
+}
+
+fn fmt_duration(seconds: i64, nanos: i32) -> String {
+    if nanos == 0 {
+        format!("{seconds}s")
+    } else {
+        let abs_nanos = nanos.unsigned_abs();
+        let trimmed = format!("{abs_nanos:09}").trim_end_matches('0').to_string();
+        if seconds == 0 && nanos < 0 {
+            format!("-0.{trimmed}s")
+        } else {
+            format!("{seconds}.{trimmed}s")
+        }
+    }
+}
+
+fn fmt_timestamp(seconds: i64, _nanos: i32) -> String {
+    format!("{seconds}")
+}
+
+pub fn check_duration_const(secs: i64, nanos: i32, c_secs: i64, c_nanos: i32) -> Option<String> {
+    if secs != c_secs || nanos != c_nanos {
+        Some(format!("must equal {}", fmt_duration(c_secs, c_nanos)))
+    } else {
+        None
+    }
+}
+
+pub fn check_duration_lt(secs: i64, nanos: i32, lt_secs: i64, lt_nanos: i32) -> Option<String> {
+    if timeval_to_nanos(secs, nanos) >= timeval_to_nanos(lt_secs, lt_nanos) {
+        Some(format!(
+            "must be less than {}",
+            fmt_duration(lt_secs, lt_nanos)
+        ))
+    } else {
+        None
+    }
+}
+
+pub fn check_duration_lte(secs: i64, nanos: i32, lte_secs: i64, lte_nanos: i32) -> Option<String> {
+    if timeval_to_nanos(secs, nanos) > timeval_to_nanos(lte_secs, lte_nanos) {
+        Some(format!(
+            "must be less than or equal to {}",
+            fmt_duration(lte_secs, lte_nanos)
+        ))
+    } else {
+        None
+    }
+}
+
+pub fn check_duration_gt(secs: i64, nanos: i32, gt_secs: i64, gt_nanos: i32) -> Option<String> {
+    if timeval_to_nanos(secs, nanos) <= timeval_to_nanos(gt_secs, gt_nanos) {
+        Some(format!(
+            "must be greater than {}",
+            fmt_duration(gt_secs, gt_nanos)
+        ))
+    } else {
+        None
+    }
+}
+
+pub fn check_duration_gte(secs: i64, nanos: i32, gte_secs: i64, gte_nanos: i32) -> Option<String> {
+    if timeval_to_nanos(secs, nanos) < timeval_to_nanos(gte_secs, gte_nanos) {
+        Some(format!(
+            "must be greater than or equal to {}",
+            fmt_duration(gte_secs, gte_nanos)
+        ))
+    } else {
+        None
+    }
+}
+
+pub fn check_duration_in(secs: i64, nanos: i32, values: &[(i64, i32)]) -> Option<String> {
+    let val = timeval_to_nanos(secs, nanos);
+    if !values.iter().any(|(s, n)| timeval_to_nanos(*s, *n) == val) {
+        Some("must be in list".to_string())
+    } else {
+        None
+    }
+}
+
+pub fn check_duration_not_in(secs: i64, nanos: i32, values: &[(i64, i32)]) -> Option<String> {
+    let val = timeval_to_nanos(secs, nanos);
+    if values.iter().any(|(s, n)| timeval_to_nanos(*s, *n) == val) {
+        Some("must not be in list".to_string())
+    } else {
+        None
+    }
+}
+
+pub fn check_timestamp_const(secs: i64, nanos: i32, c_secs: i64, c_nanos: i32) -> Option<String> {
+    if secs != c_secs || nanos != c_nanos {
+        Some(format!(
+            "must equal timestamp {}",
+            fmt_timestamp(c_secs, c_nanos)
+        ))
+    } else {
+        None
+    }
+}
+
+pub fn check_timestamp_lt(secs: i64, nanos: i32, lt_secs: i64, lt_nanos: i32) -> Option<String> {
+    if timeval_to_nanos(secs, nanos) >= timeval_to_nanos(lt_secs, lt_nanos) {
+        Some(format!(
+            "must be before {}",
+            fmt_timestamp(lt_secs, lt_nanos)
+        ))
+    } else {
+        None
+    }
+}
+
+pub fn check_timestamp_lte(secs: i64, nanos: i32, lte_secs: i64, lte_nanos: i32) -> Option<String> {
+    if timeval_to_nanos(secs, nanos) > timeval_to_nanos(lte_secs, lte_nanos) {
+        Some(format!(
+            "must be at or before {}",
+            fmt_timestamp(lte_secs, lte_nanos)
+        ))
+    } else {
+        None
+    }
+}
+
+pub fn check_timestamp_gt(secs: i64, nanos: i32, gt_secs: i64, gt_nanos: i32) -> Option<String> {
+    if timeval_to_nanos(secs, nanos) <= timeval_to_nanos(gt_secs, gt_nanos) {
+        Some(format!(
+            "must be after {}",
+            fmt_timestamp(gt_secs, gt_nanos)
+        ))
+    } else {
+        None
+    }
+}
+
+pub fn check_timestamp_gte(secs: i64, nanos: i32, gte_secs: i64, gte_nanos: i32) -> Option<String> {
+    if timeval_to_nanos(secs, nanos) < timeval_to_nanos(gte_secs, gte_nanos) {
+        Some(format!(
+            "must be at or after {}",
+            fmt_timestamp(gte_secs, gte_nanos)
+        ))
+    } else {
+        None
+    }
+}
+
+pub fn check_timestamp_lt_now(secs: i64, nanos: i32) -> Option<String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let now_nanos = timeval_to_nanos(now.as_secs() as i64, now.subsec_nanos() as i32);
+    if timeval_to_nanos(secs, nanos) >= now_nanos {
+        Some("must be less than now".to_string())
+    } else {
+        None
+    }
+}
+
+pub fn check_timestamp_gt_now(secs: i64, nanos: i32) -> Option<String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let now_nanos = timeval_to_nanos(now.as_secs() as i64, now.subsec_nanos() as i32);
+    if timeval_to_nanos(secs, nanos) <= now_nanos {
+        Some("must be greater than now".to_string())
+    } else {
+        None
+    }
+}
+
+pub fn check_timestamp_within(
+    secs: i64,
+    nanos: i32,
+    within_secs: i64,
+    within_nanos: i32,
+) -> Option<String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let now_nanos = timeval_to_nanos(now.as_secs() as i64, now.subsec_nanos() as i32);
+    let val_nanos = timeval_to_nanos(secs, nanos);
+    let within = timeval_to_nanos(within_secs, within_nanos);
+    let diff = (val_nanos - now_nanos).abs();
+    if diff > within {
+        Some(format!(
+            "must be within {} of now",
+            fmt_duration(within_secs, within_nanos)
+        ))
+    } else {
+        None
+    }
+}
+
+pub fn check_any_in(type_url: &str, values: &[&str]) -> Option<String> {
+    if !values.contains(&type_url) {
+        Some("type_url must be in allowed list".to_string())
+    } else {
+        None
+    }
+}
+
+pub fn check_any_not_in(type_url: &str, values: &[&str]) -> Option<String> {
+    if values.contains(&type_url) {
+        Some("type_url must not be in forbidden list".to_string())
+    } else {
+        None
+    }
+}

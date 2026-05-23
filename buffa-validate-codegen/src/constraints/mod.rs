@@ -1,6 +1,8 @@
+pub mod any;
 pub mod bool;
 pub mod bytes;
 pub mod cel;
+pub mod duration;
 pub mod enumeration;
 pub mod map;
 pub mod message;
@@ -8,3 +10,4 @@ pub mod numeric;
 pub mod oneof;
 pub mod repeated;
 pub mod string;
+pub mod timestamp;

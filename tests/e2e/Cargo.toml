@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 buffa = { version = "0.6" }
+buffa-types = { version = "0.6", features = ["json"] }
 buffa-validate = { path = "../../buffa-validate", features = ["connectrpc"] }
 connectrpc = { version = "0.6" }
 http-body = "1"

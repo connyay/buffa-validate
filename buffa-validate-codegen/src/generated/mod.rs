@@ -65,6 +65,44 @@ pub enum TypeRules {
     Enum(EnumRules),
     Repeated(RepeatedRules),
     Map(MapRules),
+    Any(AnyRules),
+    Duration(DurationRules),
+    Timestamp(TimestampRules),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ProtoTimeval {
+    pub seconds: i64,
+    pub nanos: i32,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AnyRules {
+    pub r#in: Vec<String>,
+    pub not_in: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DurationRules {
+    pub r#const: Option<ProtoTimeval>,
+    pub lt: Option<ProtoTimeval>,
+    pub lte: Option<ProtoTimeval>,
+    pub gt: Option<ProtoTimeval>,
+    pub gte: Option<ProtoTimeval>,
+    pub r#in: Vec<ProtoTimeval>,
+    pub not_in: Vec<ProtoTimeval>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TimestampRules {
+    pub r#const: Option<ProtoTimeval>,
+    pub lt: Option<ProtoTimeval>,
+    pub lte: Option<ProtoTimeval>,
+    pub lt_now: bool,
+    pub gt: Option<ProtoTimeval>,
+    pub gte: Option<ProtoTimeval>,
+    pub gt_now: bool,
+    pub within: Option<ProtoTimeval>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -380,6 +418,21 @@ impl FieldRules {
                 (19, 2) => {
                     let sub = decode_length_delimited(&mut buf).ok_or("bad map")?;
                     rules.type_rules = Some(TypeRules::Map(MapRules::decode_from_slice(sub)?));
+                }
+                (20, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad any")?;
+                    rules.type_rules = Some(TypeRules::Any(AnyRules::decode_from_slice(sub)?));
+                }
+                (21, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad duration")?;
+                    rules.type_rules =
+                        Some(TypeRules::Duration(DurationRules::decode_from_slice(sub)?));
+                }
+                (22, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad timestamp")?;
+                    rules.type_rules = Some(TypeRules::Timestamp(
+                        TimestampRules::decode_from_slice(sub)?,
+                    ));
                 }
                 _ => {
                     skip_field(&mut buf, wire_type).ok_or("skip fail")?;
@@ -1081,3 +1134,140 @@ impl_fixed_numeric_decoder!(decode_fixed32, u32, 4, |b: [u8; 4]| u32::from_le_by
 impl_fixed_numeric_decoder!(decode_fixed64, u64, 8, |b: [u8; 8]| u64::from_le_bytes(b));
 impl_fixed_numeric_decoder!(decode_sfixed32, i32, 4, |b: [u8; 4]| i32::from_le_bytes(b));
 impl_fixed_numeric_decoder!(decode_sfixed64, i64, 8, |b: [u8; 8]| i64::from_le_bytes(b));
+
+impl ProtoTimeval {
+    fn decode_from_slice(data: &[u8]) -> Result<Self, &'static str> {
+        let mut seconds: i64 = 0;
+        let mut nanos: i32 = 0;
+        let mut buf = data;
+        while !buf.is_empty() {
+            let (field_number, wire_type) = decode_tag(&mut buf).ok_or("bad tag")?;
+            match (field_number, wire_type) {
+                (1, 0) => {
+                    seconds = decode_i64_from_varint(decode_varint(&mut buf).ok_or("bad seconds")?)
+                }
+                (2, 0) => {
+                    nanos = decode_i32_from_varint(decode_varint(&mut buf).ok_or("bad nanos")?)
+                }
+                _ => {
+                    skip_field(&mut buf, wire_type).ok_or("skip fail")?;
+                }
+            }
+        }
+        Ok(ProtoTimeval { seconds, nanos })
+    }
+}
+
+impl AnyRules {
+    pub fn decode_from_slice(data: &[u8]) -> Result<Self, &'static str> {
+        let mut rules = AnyRules::default();
+        let mut buf = data;
+        while !buf.is_empty() {
+            let (field_number, wire_type) = decode_tag(&mut buf).ok_or("bad tag")?;
+            match (field_number, wire_type) {
+                (2, 2) => {
+                    let s = decode_length_delimited(&mut buf).ok_or("bad in")?;
+                    rules.r#in.push(decode_string(s));
+                }
+                (3, 2) => {
+                    let s = decode_length_delimited(&mut buf).ok_or("bad not_in")?;
+                    rules.not_in.push(decode_string(s));
+                }
+                _ => {
+                    skip_field(&mut buf, wire_type).ok_or("skip fail")?;
+                }
+            }
+        }
+        Ok(rules)
+    }
+}
+
+impl DurationRules {
+    pub fn decode_from_slice(data: &[u8]) -> Result<Self, &'static str> {
+        let mut rules = DurationRules::default();
+        let mut buf = data;
+        while !buf.is_empty() {
+            let (field_number, wire_type) = decode_tag(&mut buf).ok_or("bad tag")?;
+            match (field_number, wire_type) {
+                (2, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad const")?;
+                    rules.r#const = Some(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                (3, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad lt")?;
+                    rules.lt = Some(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                (4, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad lte")?;
+                    rules.lte = Some(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                (5, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad gt")?;
+                    rules.gt = Some(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                (6, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad gte")?;
+                    rules.gte = Some(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                (7, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad in")?;
+                    rules.r#in.push(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                (8, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad not_in")?;
+                    rules.not_in.push(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                _ => {
+                    skip_field(&mut buf, wire_type).ok_or("skip fail")?;
+                }
+            }
+        }
+        Ok(rules)
+    }
+}
+
+impl TimestampRules {
+    pub fn decode_from_slice(data: &[u8]) -> Result<Self, &'static str> {
+        let mut rules = TimestampRules::default();
+        let mut buf = data;
+        while !buf.is_empty() {
+            let (field_number, wire_type) = decode_tag(&mut buf).ok_or("bad tag")?;
+            match (field_number, wire_type) {
+                (2, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad const")?;
+                    rules.r#const = Some(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                (3, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad lt")?;
+                    rules.lt = Some(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                (4, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad lte")?;
+                    rules.lte = Some(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                (5, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad gt")?;
+                    rules.gt = Some(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                (6, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad gte")?;
+                    rules.gte = Some(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                (7, 0) => {
+                    rules.lt_now = decode_varint(&mut buf).ok_or("bad lt_now")? != 0;
+                }
+                (8, 0) => {
+                    rules.gt_now = decode_varint(&mut buf).ok_or("bad gt_now")? != 0;
+                }
+                (9, 2) => {
+                    let sub = decode_length_delimited(&mut buf).ok_or("bad within")?;
+                    rules.within = Some(ProtoTimeval::decode_from_slice(sub)?);
+                }
+                _ => {
+                    skip_field(&mut buf, wire_type).ok_or("skip fail")?;
+                }
+            }
+        }
+        Ok(rules)
+    }
+}

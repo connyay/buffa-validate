@@ -189,6 +189,35 @@ fn generate_type_checks(
                 })
             }
         }
+        TypeRules::Duration(rules) => {
+            let inner = constraints::duration::generate(rules, field_path)?;
+            Ok(quote! {
+                if self.#field_ident.is_set() {
+                    let __secs: i64 = self.#field_ident.seconds;
+                    let __nanos: i32 = self.#field_ident.nanos;
+                    #inner
+                }
+            })
+        }
+        TypeRules::Timestamp(rules) => {
+            let inner = constraints::timestamp::generate(rules, field_path)?;
+            Ok(quote! {
+                if self.#field_ident.is_set() {
+                    let __secs: i64 = self.#field_ident.seconds;
+                    let __nanos: i32 = self.#field_ident.nanos;
+                    #inner
+                }
+            })
+        }
+        TypeRules::Any(rules) => {
+            let inner = constraints::any::generate(rules, field_path)?;
+            Ok(quote! {
+                if self.#field_ident.is_set() {
+                    let __type_url: &str = &self.#field_ident.type_url;
+                    #inner
+                }
+            })
+        }
     }
 }
 
@@ -202,6 +231,9 @@ fn default_value_guard(type_rules: &TypeRules, field_ident: &Ident) -> TokenStre
         TypeRules::Float(_) => quote! { self.#field_ident != 0.0f32 },
         TypeRules::Double(_) => quote! { self.#field_ident != 0.0f64 },
         TypeRules::Enum(_) => quote! { self.#field_ident.to_i32() != 0 },
+        TypeRules::Duration(_) | TypeRules::Timestamp(_) | TypeRules::Any(_) => {
+            quote! { self.#field_ident.is_set() }
+        }
         _ => quote! { self.#field_ident != 0 },
     }
 }

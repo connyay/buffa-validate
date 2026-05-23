@@ -3,6 +3,9 @@ syntax = "proto3";
 package test.v1;
 
 import "buf/validate/validate.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/any.proto";
 
 message User {
   string name = 1 [(buf.validate.field).string.min_len = 1];
@@ -178,4 +181,24 @@ message GetUserResponse {
 service UserService {
   rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
   rpc GetUser(GetUserRequest) returns (GetUserResponse);
+}
+
+// Phase 6: WKT validation
+message DurationConstraint {
+  google.protobuf.Duration timeout = 1 [(buf.validate.field).duration = {
+    gte: { seconds: 1 },
+    lte: { seconds: 60 }
+  }];
+}
+
+message TimestampConstraint {
+  google.protobuf.Timestamp created_at = 1 [(buf.validate.field).timestamp = {
+    gt: { seconds: 1000000000 }
+  }];
+}
+
+message AnyConstraint {
+  google.protobuf.Any payload = 1 [(buf.validate.field).any = {
+    in: ["type.googleapis.com/test.v1.User", "type.googleapis.com/test.v1.Address"]
+  }];
 }
