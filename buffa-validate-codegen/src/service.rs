@@ -50,7 +50,6 @@ fn generate_validated_service(
         let output_type_tokens = resolve_message_type(output_fqn, package, ctx)?;
 
         let input_has_validation = has_validation_rules(file, input_fqn);
-        let input_msg_type = resolve_message_type(input_fqn, package, ctx)?;
 
         if client_streaming && server_streaming {
             method_impls.push(quote! {
@@ -81,11 +80,8 @@ fn generate_validated_service(
                         ctx: ::connectrpc::RequestContext,
                         request: #input_view,
                     ) -> ::connectrpc::ServiceResult<::connectrpc::ServiceStream<impl ::connectrpc::Encodable<#output_type_tokens> + Send + use<#generic_s>>> {
-                        {
-                            let __msg: #input_msg_type = request.to_owned_message();
-                            ::buffa_validate::Validate::validate(&__msg)
-                                .map_err(::buffa_validate::violations_to_connect_error)?;
-                        }
+                        ::buffa_validate::Validate::validate(&*request)
+                            .map_err(::buffa_validate::violations_to_connect_error)?;
                         self.0.#method_snake(ctx, request).await
                     }
                 });
@@ -110,11 +106,8 @@ fn generate_validated_service(
                         ctx: ::connectrpc::RequestContext,
                         request: #input_view,
                     ) -> ::connectrpc::ServiceResult<impl ::connectrpc::Encodable<#output_type_tokens> + Send + use<'a, #generic_s>> {
-                        {
-                            let __msg: #input_msg_type = request.to_owned_message();
-                            ::buffa_validate::Validate::validate(&__msg)
-                                .map_err(::buffa_validate::violations_to_connect_error)?;
-                        }
+                        ::buffa_validate::Validate::validate(&*request)
+                            .map_err(::buffa_validate::violations_to_connect_error)?;
                         self.0.#method_snake(ctx, request).await
                     }
                 });

@@ -795,4 +795,144 @@ mod tests {
         let wrapped = ValidatedUserService(DummyService);
         assert_impl(&wrapped);
     }
+
+    // ── View type validation ──────────────────────────────────────────
+
+    #[test]
+    fn view_user_valid_passes() {
+        use super::test::v1::__buffa::view::UserView;
+        let view = UserView {
+            name: "Alice",
+            email: "alice@example.com",
+            age: 30,
+            nickname: None,
+            ..Default::default()
+        };
+        assert!(view.validate().is_ok());
+    }
+
+    #[test]
+    fn view_user_empty_name_fails() {
+        use super::test::v1::__buffa::view::UserView;
+        let view = UserView {
+            name: "",
+            email: "alice@example.com",
+            age: 30,
+            ..Default::default()
+        };
+        let err = view.validate().unwrap_err();
+        assert!(err.violations.iter().any(|v| v.field_path == "name"));
+    }
+
+    #[test]
+    fn view_string_constraints_valid() {
+        use super::test::v1::__buffa::view::StringConstraintsView;
+        let view = StringConstraintsView {
+            exact_len: "abcde",
+            with_pattern: "abc",
+            with_prefix: "pre_val",
+            with_suffix: "val_suf",
+            with_contains: "has needle here",
+            not_contains: "good",
+            in_set: "a",
+            const_val: "fixed",
+            hostname: "example.com",
+            uuid: "550e8400-e29b-41d4-a716-446655440000",
+            ip_addr: "192.168.1.1",
+            uri: "https://example.com",
+            host_port: "example.com:8080",
+            ..Default::default()
+        };
+        assert!(view.validate().is_ok());
+    }
+
+    #[test]
+    fn view_numeric_constraints_valid() {
+        use super::test::v1::__buffa::view::NumericConstraintsView;
+        let view = NumericConstraintsView {
+            int_val: 50,
+            long_val: 0,
+            signed_val: 0,
+            fixed_val: 100,
+            sfixed_val: 5,
+            dbl_val: 1.0,
+            flt_val: 0.5,
+            in_set: 3,
+            not_in_set: 42,
+            const_val: 42,
+            ..Default::default()
+        };
+        assert!(view.validate().is_ok());
+    }
+
+    #[test]
+    fn view_nested_person_valid() {
+        use super::test::v1::__buffa::view::{AddressView, PersonView};
+        use buffa::view::MessageFieldView;
+        let view = PersonView {
+            name: "Bob",
+            address: MessageFieldView::set(AddressView {
+                street: "123 Main St",
+                city: "Springfield",
+                zip: "12345",
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(view.validate().is_ok());
+    }
+
+    #[test]
+    fn view_nested_person_invalid_zip() {
+        use super::test::v1::__buffa::view::{AddressView, PersonView};
+        use buffa::view::MessageFieldView;
+        let view = PersonView {
+            name: "Bob",
+            address: MessageFieldView::set(AddressView {
+                street: "123 Main St",
+                city: "Springfield",
+                zip: "bad",
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let err = view.validate().unwrap_err();
+        assert!(err.violations.iter().any(|v| v.field_path == "address.zip"));
+    }
+
+    #[test]
+    fn view_owned_view_validates_directly() {
+        use super::test::v1::__buffa::view::UserView;
+        use buffa::Message;
+        use buffa::view::OwnedView;
+
+        let user = User {
+            name: "Alice".into(),
+            email: "alice@example.com".into(),
+            age: 30,
+            ..Default::default()
+        };
+        let bytes = buffa::bytes::Bytes::from(user.encode_to_vec());
+        let owned_view = OwnedView::<UserView<'static>>::decode(bytes).unwrap();
+        assert!(owned_view.validate().is_ok());
+    }
+
+    #[test]
+    fn view_owned_view_invalid_fails() {
+        use super::test::v1::__buffa::view::UserView;
+        use buffa::Message;
+        use buffa::view::OwnedView;
+
+        let user = User {
+            name: "".into(),
+            email: "not-an-email".into(),
+            age: 30,
+            ..Default::default()
+        };
+        let bytes = buffa::bytes::Bytes::from(user.encode_to_vec());
+        let owned_view = OwnedView::<UserView<'static>>::decode(bytes).unwrap();
+        let err = owned_view.validate().unwrap_err();
+        assert!(err.violations.iter().any(|v| v.field_path == "name"));
+        assert!(err.violations.iter().any(|v| v.field_path == "email"));
+    }
 }

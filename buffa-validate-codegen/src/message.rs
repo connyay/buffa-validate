@@ -192,6 +192,23 @@ fn generate_message_validation(
                 }
             }
         });
+
+        if let Some(view_tokens) = view_type_tokens(rust_type_path) {
+            let field_checks_view = field_checks.clone();
+            out.extend(quote! {
+                impl ::buffa_validate::Validate for #view_tokens<'_> {
+                    fn validate(&self) -> ::core::result::Result<(), ::buffa_validate::Violations> {
+                        let mut violations = ::std::vec::Vec::new();
+                        #field_checks_view
+                        if violations.is_empty() {
+                            ::core::result::Result::Ok(())
+                        } else {
+                            ::core::result::Result::Err(::buffa_validate::Violations { violations })
+                        }
+                    }
+                }
+            });
+        }
     }
 
     // Recurse into nested messages
@@ -205,6 +222,19 @@ fn generate_message_validation(
 }
 
 use crate::generated::TypeRules;
+
+fn view_type_tokens(owned_rust_path: &str) -> Option<TokenStream> {
+    let pos = owned_rust_path.rfind("::")?;
+    let prefix = &owned_rust_path[..pos];
+    let name = &owned_rust_path[pos + 2..];
+    let view_path = format!(
+        "{}::{}::view::{}View",
+        prefix,
+        buffa_codegen::context::SENTINEL_MOD,
+        name
+    );
+    Some(buffa_codegen::idents::rust_path_to_tokens(&view_path))
+}
 
 fn generate_map_key_checks(type_rules: &TypeRules, field_name: &str) -> Result<TokenStream> {
     match type_rules {
