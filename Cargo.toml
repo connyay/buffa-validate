@@ -19,7 +19,7 @@ buffa-types = { version = "0.6" }
 buffa-codegen = { version = "0.6" }
 buffa-build = { version = "0.6" }
 buffa-descriptor = { version = "0.6" }
-connectrpc = { version = "0.6" }
+connectrpc = { version = "0.6", default-features = false }
 connectrpc-build = { version = "0.6" }
 
 anyhow = "1"

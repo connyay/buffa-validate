@@ -896,6 +896,66 @@ mod tests {
         assert!(err.violations.iter().any(|v| v.field_path == "email"));
     }
 
+    // ── Imported message fields ─────────────────────────────────────────
+
+    #[test]
+    fn imported_singular_message_own_rules_pass() {
+        let msg = WithImportedMessage {
+            name: "Alice".into(),
+            metadata: buffa::MessageField::some(super::common::v1::Metadata {
+                key: "k".into(),
+                value: "v".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn imported_singular_message_own_rules_fail() {
+        let msg = WithImportedMessage {
+            name: "".into(),
+            ..Default::default()
+        };
+        let err = msg.validate().unwrap_err();
+        assert!(err.violations.iter().any(|v| v.field_path == "name"));
+        assert!(
+            !err.violations
+                .iter()
+                .any(|v| v.field_path.starts_with("metadata"))
+        );
+    }
+
+    #[test]
+    fn imported_repeated_message_own_rules_pass() {
+        let msg = WithRepeatedImportedMessage {
+            name: "Alice".into(),
+            items: vec![super::common::v1::Metadata {
+                key: "k".into(),
+                value: "v".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn imported_repeated_message_own_rules_fail() {
+        let msg = WithRepeatedImportedMessage {
+            name: "".into(),
+            ..Default::default()
+        };
+        let err = msg.validate().unwrap_err();
+        assert!(err.violations.iter().any(|v| v.field_path == "name"));
+        assert!(
+            !err.violations
+                .iter()
+                .any(|v| v.field_path.starts_with("items"))
+        );
+    }
+
     // ── Duration constraints ──────────────────────────────────────────
 
     #[test]

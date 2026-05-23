@@ -4,9 +4,20 @@ pub mod generated;
 mod message;
 mod rules;
 
+use std::collections::HashSet;
+
 use anyhow::Result;
-use buffa_codegen::generated::descriptor::FileDescriptorProto;
+use buffa_codegen::generated::descriptor::{DescriptorProto, FileDescriptorProto};
 use buffa_codegen::{GeneratedFile, GeneratedFileKind, context::CodeGenContext};
+
+fn collect_message_fqns(messages: &[DescriptorProto], prefix: &str, out: &mut HashSet<String>) {
+    for msg in messages {
+        let name = msg.name.as_deref().unwrap_or("");
+        let fqn = format!("{prefix}.{name}");
+        out.insert(fqn.clone());
+        collect_message_fqns(&msg.nested_type, &fqn, out);
+    }
+}
 
 pub fn generate_validation(
     file_descriptors: &[FileDescriptorProto],
@@ -14,6 +25,23 @@ pub fn generate_validation(
     codegen_config: &buffa_codegen::CodeGenConfig,
 ) -> Result<Vec<GeneratedFile>> {
     let ctx = CodeGenContext::for_generate(file_descriptors, files_to_generate, codegen_config);
+
+    let mut validatable_fqns = HashSet::new();
+    for file_name in files_to_generate {
+        if let Some(file) = file_descriptors
+            .iter()
+            .find(|f| f.name.as_deref() == Some(file_name))
+        {
+            let package = file.package.clone().unwrap_or_default();
+            let prefix = if package.is_empty() {
+                String::new()
+            } else {
+                format!(".{package}")
+            };
+            collect_message_fqns(&file.message_type, &prefix, &mut validatable_fqns);
+        }
+    }
+
     let mut companions = Vec::new();
 
     for file_name in files_to_generate {
@@ -24,7 +52,7 @@ pub fn generate_validation(
 
         let package = file.package.clone().unwrap_or_default();
 
-        let tokens = message::generate_file_validations(file, &package, &ctx)?;
+        let tokens = message::generate_file_validations(file, &package, &ctx, &validatable_fqns)?;
 
         if tokens.is_empty() {
             continue;

@@ -1,6 +1,11 @@
+use std::collections::HashSet;
+
 use anyhow::Result;
 use buffa_codegen::context::CodeGenContext;
-use buffa_codegen::generated::descriptor::{DescriptorProto, FileDescriptorProto};
+use buffa_codegen::generated::descriptor::field_descriptor_proto::Label;
+use buffa_codegen::generated::descriptor::{
+    DescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+};
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -12,6 +17,7 @@ pub fn generate_file_validations(
     file: &FileDescriptorProto,
     package: &str,
     ctx: &CodeGenContext<'_>,
+    validatable_fqns: &HashSet<String>,
 ) -> Result<TokenStream> {
     let mut tokens = TokenStream::new();
 
@@ -22,7 +28,7 @@ pub fn generate_file_validations(
         } else {
             format!(".{package}.{name}")
         };
-        generate_message_validation(message, &fqn, package, ctx, &mut tokens)?;
+        generate_message_validation(message, &fqn, package, ctx, &mut tokens, validatable_fqns)?;
     }
 
     Ok(tokens)
@@ -34,6 +40,7 @@ fn generate_message_validation(
     _package: &str,
     ctx: &CodeGenContext<'_>,
     out: &mut TokenStream,
+    validatable_fqns: &HashSet<String>,
 ) -> Result<()> {
     let _message_name = message.name.as_deref().unwrap_or("");
 
@@ -95,22 +102,14 @@ fn generate_message_validation(
 
         if is_message_type {
             let field_type_name = field_desc.type_name.as_deref().unwrap_or("");
-            let is_map_or_repeated = field_rules
-                .as_ref()
-                .and_then(|r| r.type_rules.as_ref())
-                .is_some_and(|tr| {
-                    matches!(
-                        tr,
-                        crate::generated::TypeRules::Map(_)
-                            | crate::generated::TypeRules::Repeated(_)
-                    )
-                });
+            let is_repeated_label = field_desc.label.unwrap_or_default() == Label::LABEL_REPEATED;
             let is_ignored = field_rules
                 .as_ref()
                 .is_some_and(|r| r.ignore == crate::generated::Ignore::Always);
             if !field_type_name.starts_with(".google.protobuf.")
-                && !is_map_or_repeated
+                && !is_repeated_label
                 && !is_ignored
+                && validatable_fqns.contains(field_type_name)
             {
                 has_any_rules = true;
                 let field_ident = buffa_codegen::idents::make_field_ident(field_name);
@@ -123,7 +122,46 @@ fn generate_message_validation(
         }
     }
 
-    // Validate repeated/map items
+    // Validate repeated message items (based on descriptor label, not validation rules)
+    for field_desc in &message.field {
+        let field_name = field_desc.name.as_deref().unwrap_or("");
+        let is_message_type = field_desc.r#type
+            == Some(
+                buffa_codegen::generated::descriptor::field_descriptor_proto::Type::TYPE_MESSAGE,
+            );
+        let is_repeated_label = field_desc.label.unwrap_or_default() == Label::LABEL_REPEATED;
+
+        if is_repeated_label && is_message_type {
+            let field_type_name = field_desc.type_name.as_deref().unwrap_or("");
+            let is_ignored = rules::field_rules(field_desc)
+                .as_ref()
+                .is_some_and(|r| r.ignore == crate::generated::Ignore::Always);
+            if !field_type_name.starts_with(".google.protobuf.")
+                && !is_map_field(message, field_desc)
+                && !is_ignored
+                && validatable_fqns.contains(field_type_name)
+            {
+                has_any_rules = true;
+                let field_ident = buffa_codegen::idents::make_field_ident(field_name);
+                field_checks.extend(quote! {
+                    for (__idx, __item) in self.#field_ident.iter().enumerate() {
+                        if let ::core::result::Result::Err(nested_violations) = ::buffa_validate::Validate::validate(__item) {
+                            for mut v in nested_violations.violations {
+                                if v.field_path.is_empty() {
+                                    v.field_path = ::std::format!("{}[{}]", #field_name, __idx);
+                                } else {
+                                    v.field_path = ::std::format!("{}[{}].{}", #field_name, __idx, v.field_path);
+                                }
+                                violations.push(v);
+                            }
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    // Validate repeated scalar items and map entries
     for field_desc in &message.field {
         let field_name = field_desc.name.as_deref().unwrap_or("");
         let is_message_type = field_desc.r#type
@@ -138,44 +176,20 @@ fn generate_message_validation(
 
             if let Some(crate::generated::TypeRules::Repeated(ref repeated_rules)) =
                 field_rules.type_rules
+                && let Some(ref items) = repeated_rules.items
+                && let Some(ref type_rules) = items.type_rules
+                && !is_message_type
             {
-                if is_message_type {
-                    let field_type_name = field_desc.type_name.as_deref().unwrap_or("");
-                    if !field_type_name.starts_with(".google.protobuf.") {
-                        has_any_rules = true;
-                        let field_ident = buffa_codegen::idents::make_field_ident(field_name);
-                        field_checks.extend(quote! {
-                            for (__idx, __item) in self.#field_ident.iter().enumerate() {
-                                if let ::core::result::Result::Err(nested_violations) = ::buffa_validate::Validate::validate(__item) {
-                                    for mut v in nested_violations.violations {
-                                        if v.field_path.is_empty() {
-                                            v.field_path = ::std::format!("{}[{}]", #field_name, __idx);
-                                        } else {
-                                            v.field_path = ::std::format!("{}[{}].{}", #field_name, __idx, v.field_path);
-                                        }
-                                        violations.push(v);
-                                    }
-                                }
-                            }
-                        });
-                    }
-                }
-
-                if let Some(ref items) = repeated_rules.items
-                    && let Some(ref type_rules) = items.type_rules
-                    && !is_message_type
-                {
-                    let item_checks = generate_repeated_item_type_checks(type_rules, field_name)?;
-                    if !item_checks.is_empty() {
-                        has_any_rules = true;
-                        let field_ident = buffa_codegen::idents::make_field_ident(field_name);
-                        field_checks.extend(quote! {
-                            for (__idx, __item) in self.#field_ident.iter().enumerate() {
-                                let __item_path = ::std::format!("{}[{}]", #field_name, __idx);
-                                #item_checks
-                            }
-                        });
-                    }
+                let item_checks = generate_repeated_item_type_checks(type_rules, field_name)?;
+                if !item_checks.is_empty() {
+                    has_any_rules = true;
+                    let field_ident = buffa_codegen::idents::make_field_ident(field_name);
+                    field_checks.extend(quote! {
+                        for (__idx, __item) in self.#field_ident.iter().enumerate() {
+                            let __item_path = ::std::format!("{}[{}]", #field_name, __idx);
+                            #item_checks
+                        }
+                    });
                 }
             }
             if let Some(crate::generated::TypeRules::Map(ref map_rules)) = field_rules.type_rules
@@ -250,10 +264,28 @@ fn generate_message_validation(
     for nested in &message.nested_type {
         let nested_name = nested.name.as_deref().unwrap_or("");
         let nested_fqn = format!("{fqn}.{nested_name}");
-        generate_message_validation(nested, &nested_fqn, _package, ctx, out)?;
+        generate_message_validation(nested, &nested_fqn, _package, ctx, out, validatable_fqns)?;
     }
 
     Ok(())
+}
+
+fn is_map_field(message: &DescriptorProto, field: &FieldDescriptorProto) -> bool {
+    let type_name = match field.type_name.as_deref() {
+        Some(tn) => tn,
+        None => return false,
+    };
+    message.nested_type.iter().any(|nested| {
+        nested
+            .options
+            .as_option()
+            .and_then(|o| o.map_entry)
+            .unwrap_or(false)
+            && nested
+                .name
+                .as_deref()
+                .is_some_and(|n| type_name.ends_with(&format!(".{n}")))
+    })
 }
 
 use crate::generated::TypeRules;

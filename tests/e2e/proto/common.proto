@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package common.v1;
+
+message Metadata {
+    string key = 1;
+    string value = 2;
+}

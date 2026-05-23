@@ -3,6 +3,7 @@ syntax = "proto3";
 package test.v1;
 
 import "buf/validate/validate.proto";
+import "common.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/any.proto";
@@ -181,6 +182,17 @@ message GetUserResponse {
 service UserService {
   rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
   rpc GetUser(GetUserRequest) returns (GetUserResponse);
+}
+
+// Imported message fields (common.v1.Metadata has no Validate impl)
+message WithImportedMessage {
+    string name = 1 [(buf.validate.field).string.min_len = 1];
+    common.v1.Metadata metadata = 2;
+}
+
+message WithRepeatedImportedMessage {
+    string name = 1 [(buf.validate.field).string.min_len = 1];
+    repeated common.v1.Metadata items = 2;
 }
 
 // Phase 6: WKT validation
