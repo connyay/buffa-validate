@@ -32,10 +32,13 @@ buffa-validate-build = "0.1"
 
 ```rust
 fn main() {
+    // Bundled buf/validate/validate.proto — pass to any build crate's includes
+    let validate_include = buffa_validate_build::include_dir();
+
     // Step 1: normal connect-rust build (or buffa-build)
     connectrpc_build::Config::new()
         .files(&["proto/service.proto"])
-        .includes(&["proto/"])
+        .includes(&["proto/", validate_include.to_str().unwrap()])
         .include_file("_include.rs")
         .compile()
         .unwrap();

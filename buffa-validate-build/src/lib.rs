@@ -5,6 +5,27 @@ use anyhow::{Context, Result, anyhow, bail};
 use buffa::Message;
 use buffa_codegen::generated::descriptor::FileDescriptorSet;
 
+const VALIDATE_PROTO: &[u8] = include_bytes!("../../proto/buf/validate/validate.proto");
+
+/// Writes the bundled `buf/validate/validate.proto` into `OUT_DIR` and returns
+/// the include path that resolves `import "buf/validate/validate.proto"`.
+///
+/// Pass this to `.includes()` on any protoc-based build crate
+/// (`connectrpc_build`, `buffa_build`, etc.) so consumers don't need to vendor
+/// the proto themselves.
+pub fn include_dir() -> PathBuf {
+    let out_dir: PathBuf = std::env::var_os("OUT_DIR")
+        .expect("OUT_DIR not set — must be called from a build script")
+        .into();
+    let root = out_dir.join("buffa-validate-protos");
+    let proto_path = root.join("buf/validate/validate.proto");
+    if !proto_path.exists() {
+        std::fs::create_dir_all(proto_path.parent().unwrap()).unwrap();
+        std::fs::write(&proto_path, VALIDATE_PROTO).unwrap();
+    }
+    root
+}
+
 #[derive(Debug, Clone, Default)]
 enum DescriptorSource {
     #[default]
@@ -96,8 +117,9 @@ impl Config {
         // 1. Acquire descriptors
         let (descriptor_bytes, files_to_generate) = match &self.descriptor_source {
             DescriptorSource::Protoc => {
-                let bytes = run_protoc(&self.files, &self.includes)?;
                 let mut includes = self.includes.clone();
+                includes.push(include_dir());
+                let bytes = run_protoc(&self.files, &includes)?;
                 includes.sort_by_key(|p| std::cmp::Reverse(p.as_os_str().len()));
                 let files = self
                     .files
