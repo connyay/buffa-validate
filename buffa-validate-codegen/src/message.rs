@@ -193,7 +193,9 @@ fn generate_message_validation(
             }
         });
 
-        if let Some(view_tokens) = view_type_tokens(rust_type_path) {
+        if ctx.config.generate_views
+            && let Some(view_tokens) = view_type_tokens(rust_type_path)
+        {
             let field_checks_view = field_checks.clone();
             out.extend(quote! {
                 impl ::buffa_validate::Validate for #view_tokens<'_> {

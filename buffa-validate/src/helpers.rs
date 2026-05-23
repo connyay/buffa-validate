@@ -201,34 +201,30 @@ pub fn check_string_uri(val: &str) -> Option<String> {
 // Numeric helpers
 
 pub fn check_gt<T: PartialOrd + std::fmt::Display>(val: T, bound: T) -> Option<String> {
-    if val <= bound {
-        Some(format!("value must be greater than {bound}"))
-    } else {
-        None
+    match val.partial_cmp(&bound) {
+        Some(std::cmp::Ordering::Greater) => None,
+        _ => Some(format!("value must be greater than {bound}")),
     }
 }
 
 pub fn check_gte<T: PartialOrd + std::fmt::Display>(val: T, bound: T) -> Option<String> {
-    if val < bound {
-        Some(format!("value must be greater than or equal to {bound}"))
-    } else {
-        None
+    match val.partial_cmp(&bound) {
+        Some(std::cmp::Ordering::Greater | std::cmp::Ordering::Equal) => None,
+        _ => Some(format!("value must be greater than or equal to {bound}")),
     }
 }
 
 pub fn check_lt<T: PartialOrd + std::fmt::Display>(val: T, bound: T) -> Option<String> {
-    if val >= bound {
-        Some(format!("value must be less than {bound}"))
-    } else {
-        None
+    match val.partial_cmp(&bound) {
+        Some(std::cmp::Ordering::Less) => None,
+        _ => Some(format!("value must be less than {bound}")),
     }
 }
 
 pub fn check_lte<T: PartialOrd + std::fmt::Display>(val: T, bound: T) -> Option<String> {
-    if val > bound {
-        Some(format!("value must be less than or equal to {bound}"))
-    } else {
-        None
+    match val.partial_cmp(&bound) {
+        Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal) => None,
+        _ => Some(format!("value must be less than or equal to {bound}")),
     }
 }
 
@@ -416,9 +412,12 @@ fn check_ip_prefix_common(val: &str, must_be_prefix: bool, version: Option<u8>) 
 
 pub fn check_string_host_and_port(val: &str) -> Option<String> {
     if let Some(rest) = val.strip_prefix('[') {
-        let Some((_, port_str)) = rest.rsplit_once("]:") else {
+        let Some((host, port_str)) = rest.rsplit_once("]:") else {
             return Some("value must be a valid host:port pair".to_string());
         };
+        if host.parse::<std::net::Ipv6Addr>().is_err() {
+            return Some("value must be a valid host:port pair".to_string());
+        }
         if port_str.parse::<u16>().is_err() {
             return Some("value must have a valid port number".to_string());
         }
@@ -494,16 +493,15 @@ fn timeval_to_nanos(seconds: i64, nanos: i32) -> i128 {
 }
 
 fn fmt_duration(seconds: i64, nanos: i32) -> String {
-    if nanos == 0 {
-        format!("{seconds}s")
+    let total = timeval_to_nanos(seconds, nanos);
+    let frac = (total % 1_000_000_000).unsigned_abs();
+    if frac == 0 {
+        format!("{}s", total / 1_000_000_000)
     } else {
-        let abs_nanos = nanos.unsigned_abs();
-        let trimmed = format!("{abs_nanos:09}").trim_end_matches('0').to_string();
-        if seconds == 0 && nanos < 0 {
-            format!("-0.{trimmed}s")
-        } else {
-            format!("{seconds}.{trimmed}s")
-        }
+        let sign = if total < 0 { "-" } else { "" };
+        let whole = (total / 1_000_000_000).unsigned_abs();
+        let trimmed = format!("{frac:09}").trim_end_matches('0').to_string();
+        format!("{sign}{whole}.{trimmed}s")
     }
 }
 
@@ -512,7 +510,7 @@ fn fmt_timestamp(seconds: i64, _nanos: i32) -> String {
 }
 
 pub fn check_duration_const(secs: i64, nanos: i32, c_secs: i64, c_nanos: i32) -> Option<String> {
-    if secs != c_secs || nanos != c_nanos {
+    if timeval_to_nanos(secs, nanos) != timeval_to_nanos(c_secs, c_nanos) {
         Some(format!("must equal {}", fmt_duration(c_secs, c_nanos)))
     } else {
         None
@@ -582,7 +580,7 @@ pub fn check_duration_not_in(secs: i64, nanos: i32, values: &[(i64, i32)]) -> Op
 }
 
 pub fn check_timestamp_const(secs: i64, nanos: i32, c_secs: i64, c_nanos: i32) -> Option<String> {
-    if secs != c_secs || nanos != c_nanos {
+    if timeval_to_nanos(secs, nanos) != timeval_to_nanos(c_secs, c_nanos) {
         Some(format!(
             "must equal timestamp {}",
             fmt_timestamp(c_secs, c_nanos)
