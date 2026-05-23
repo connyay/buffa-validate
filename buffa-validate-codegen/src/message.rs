@@ -31,7 +31,7 @@ pub fn generate_file_validations(
 fn generate_message_validation(
     message: &DescriptorProto,
     fqn: &str,
-    package: &str,
+    _package: &str,
     ctx: &CodeGenContext<'_>,
     out: &mut TokenStream,
 ) -> Result<()> {
@@ -248,7 +248,7 @@ fn generate_message_validation(
     for nested in &message.nested_type {
         let nested_name = nested.name.as_deref().unwrap_or("");
         let nested_fqn = format!("{fqn}.{nested_name}");
-        generate_message_validation(nested, &nested_fqn, package, ctx, out)?;
+        generate_message_validation(nested, &nested_fqn, _package, ctx, out)?;
     }
 
     Ok(())
