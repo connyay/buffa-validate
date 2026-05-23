@@ -47,8 +47,12 @@ fn generate_message_validation(
     let mut has_any_rules = false;
 
     // Check message-level rules (CEL)
-    if let Some(_msg_rules) = rules::message_rules(message) {
-        // CEL support will be added in Phase 4
+    if let Some(msg_rules) = rules::message_rules(message)
+        && !msg_rules.cel.is_empty()
+    {
+        has_any_rules = true;
+        let cel_checks = constraints::cel::generate_message_cel(&msg_rules.cel, &message.field)?;
+        field_checks.extend(cel_checks);
     }
 
     // Check oneof-level rules
@@ -62,15 +66,16 @@ fn generate_message_validation(
         }
 
         if let Some(oneof_rules) = rules::oneof_rules(oneof_desc)
-            && oneof_rules.required {
-                has_any_rules = true;
-                let oneof_name = oneof_desc.name.as_deref().unwrap_or("");
-                let oneof_ident = buffa_codegen::idents::make_field_ident(oneof_name);
-                field_checks.extend(constraints::oneof::generate_required(
-                    &oneof_ident,
-                    oneof_name,
-                ));
-            }
+            && oneof_rules.required
+        {
+            has_any_rules = true;
+            let oneof_name = oneof_desc.name.as_deref().unwrap_or("");
+            let oneof_ident = buffa_codegen::idents::make_field_ident(oneof_name);
+            field_checks.extend(constraints::oneof::generate_required(
+                &oneof_ident,
+                oneof_name,
+            ));
+        }
     }
 
     // Check field-level rules
@@ -124,12 +129,13 @@ fn generate_message_validation(
 
         if let Some(field_rules) = rules::field_rules(field_desc) {
             if let Some(crate::generated::TypeRules::Repeated(_)) = field_rules.type_rules
-                && is_message_type {
-                    let field_type_name = field_desc.type_name.as_deref().unwrap_or("");
-                    if !field_type_name.starts_with(".google.protobuf.") {
-                        has_any_rules = true;
-                        let field_ident = buffa_codegen::idents::make_field_ident(field_name);
-                        field_checks.extend(quote! {
+                && is_message_type
+            {
+                let field_type_name = field_desc.type_name.as_deref().unwrap_or("");
+                if !field_type_name.starts_with(".google.protobuf.") {
+                    has_any_rules = true;
+                    let field_ident = buffa_codegen::idents::make_field_ident(field_name);
+                    field_checks.extend(quote! {
                             for (__idx, __item) in self.#field_ident.iter().enumerate() {
                                 if let ::core::result::Result::Err(nested_violations) = ::buffa_validate::Validate::validate(__item) {
                                     for mut v in nested_violations.violations {
@@ -139,33 +145,36 @@ fn generate_message_validation(
                                 }
                             }
                         });
-                    }
                 }
+            }
             if let Some(crate::generated::TypeRules::Map(ref map_rules)) = field_rules.type_rules
-                && (map_rules.keys.is_some() || map_rules.values.is_some()) {
-                    let field_ident = buffa_codegen::idents::make_field_ident(field_name);
-                    let mut entry_checks = TokenStream::new();
+                && (map_rules.keys.is_some() || map_rules.values.is_some())
+            {
+                let field_ident = buffa_codegen::idents::make_field_ident(field_name);
+                let mut entry_checks = TokenStream::new();
 
-                    if let Some(ref keys_rules) = map_rules.keys
-                        && let Some(ref type_rules) = keys_rules.type_rules {
-                            let key_checks = generate_map_key_checks(type_rules, field_name)?;
-                            entry_checks.extend(key_checks);
-                        }
-                    if let Some(ref values_rules) = map_rules.values
-                        && let Some(ref type_rules) = values_rules.type_rules {
-                            let val_checks = generate_map_value_checks(type_rules, field_name)?;
-                            entry_checks.extend(val_checks);
-                        }
-
-                    if !entry_checks.is_empty() {
-                        has_any_rules = true;
-                        field_checks.extend(quote! {
-                            for (__key, __val) in &self.#field_ident {
-                                #entry_checks
-                            }
-                        });
-                    }
+                if let Some(ref keys_rules) = map_rules.keys
+                    && let Some(ref type_rules) = keys_rules.type_rules
+                {
+                    let key_checks = generate_map_key_checks(type_rules, field_name)?;
+                    entry_checks.extend(key_checks);
                 }
+                if let Some(ref values_rules) = map_rules.values
+                    && let Some(ref type_rules) = values_rules.type_rules
+                {
+                    let val_checks = generate_map_value_checks(type_rules, field_name)?;
+                    entry_checks.extend(val_checks);
+                }
+
+                if !entry_checks.is_empty() {
+                    has_any_rules = true;
+                    field_checks.extend(quote! {
+                        for (__key, __val) in &self.#field_ident {
+                            #entry_checks
+                        }
+                    });
+                }
+            }
         }
     }
 

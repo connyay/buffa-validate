@@ -627,4 +627,98 @@ mod tests {
                 .any(|v| v.rule == "map.values.string.min_len")
         );
     }
+
+    // ── CEL field-level constraints ────────────────────────────────
+
+    #[test]
+    fn cel_field_valid_passes() {
+        let msg = CelFieldConstraint {
+            code: "ABC".into(),
+            score: 50,
+            even_number: 4,
+            ..Default::default()
+        };
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn cel_field_code_format_fails() {
+        let msg = CelFieldConstraint {
+            code: "abc".into(),
+            score: 50,
+            even_number: 4,
+            ..Default::default()
+        };
+        let err = msg.validate().unwrap_err();
+        assert!(
+            err.violations
+                .iter()
+                .any(|v| v.field_path == "code" && v.rule == "code.format")
+        );
+    }
+
+    #[test]
+    fn cel_field_score_range_fails() {
+        let msg = CelFieldConstraint {
+            code: "ABC".into(),
+            score: 101,
+            even_number: 4,
+            ..Default::default()
+        };
+        let err = msg.validate().unwrap_err();
+        assert!(
+            err.violations
+                .iter()
+                .any(|v| v.field_path == "score" && v.rule == "score.range")
+        );
+    }
+
+    #[test]
+    fn cel_field_even_number_fails() {
+        let msg = CelFieldConstraint {
+            code: "ABC".into(),
+            score: 50,
+            even_number: 3,
+            ..Default::default()
+        };
+        let err = msg.validate().unwrap_err();
+        assert!(
+            err.violations
+                .iter()
+                .any(|v| v.field_path == "even_number" && v.rule == "even_number.even")
+        );
+    }
+
+    // ── CEL message-level constraints ──────────────────────────────
+
+    #[test]
+    fn cel_message_valid_passes() {
+        let msg = CelMessageConstraint {
+            start_date: "2024-01-01".into(),
+            end_date: "2024-12-31".into(),
+            ..Default::default()
+        };
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn cel_message_equal_dates_passes() {
+        let msg = CelMessageConstraint {
+            start_date: "2024-06-15".into(),
+            end_date: "2024-06-15".into(),
+            ..Default::default()
+        };
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn cel_message_dates_order_fails() {
+        let msg = CelMessageConstraint {
+            start_date: "2024-12-31".into(),
+            end_date: "2024-01-01".into(),
+            ..Default::default()
+        };
+        let err = msg.validate().unwrap_err();
+        assert!(err.violations.iter().any(|v| v.rule == "dates.order"));
+    }
 }

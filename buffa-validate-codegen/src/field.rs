@@ -70,6 +70,19 @@ pub fn generate_field_validation(
         }
     }
 
+    // Field-level CEL rules
+    if !rules.cel.is_empty() {
+        let cel_checks = constraints::cel::generate_field_cel(
+            &rules.cel,
+            &field_ident,
+            field_path_str,
+            rules.type_rules.as_ref(),
+            is_optional,
+            field_desc.r#type,
+        )?;
+        checks.extend(cel_checks);
+    }
+
     Ok(checks)
 }
 

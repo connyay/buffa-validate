@@ -124,3 +124,33 @@ message MapKeyValueConstraint {
     values: { string: { min_len: 1 } }
   }];
 }
+
+// Phase 4: CEL field-level rules
+message CelFieldConstraint {
+  string code = 1 [(buf.validate.field).cel = {
+    id: "code.format",
+    message: "code must be uppercase and 3-5 chars",
+    expression: "this.matches('^[A-Z]{3,5}$')"
+  }];
+  int32 score = 2 [(buf.validate.field).cel = {
+    id: "score.range",
+    message: "score must be between 0 and 100",
+    expression: "this >= 0 && this <= 100"
+  }];
+  uint32 even_number = 3 [(buf.validate.field).cel = {
+    id: "even_number.even",
+    message: "value must be even",
+    expression: "this % 2u == 0u"
+  }];
+}
+
+// Phase 4: CEL message-level rules
+message CelMessageConstraint {
+  string start_date = 1;
+  string end_date = 2;
+  option (buf.validate.message).cel = {
+    id: "dates.order",
+    message: "end_date must be after start_date",
+    expression: "this.start_date <= this.end_date"
+  };
+}

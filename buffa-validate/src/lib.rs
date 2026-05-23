@@ -16,5 +16,6 @@ pub trait Validate {
 
 #[doc(hidden)]
 pub mod __private {
+    pub use cel;
     pub use regex::Regex;
 }

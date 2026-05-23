@@ -1,5 +1,6 @@
 pub mod bool;
 pub mod bytes;
+pub mod cel;
 pub mod enumeration;
 pub mod map;
 pub mod message;

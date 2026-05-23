@@ -432,3 +432,57 @@ pub fn check_string_host_and_port(val: &str) -> Option<String> {
     }
     None
 }
+
+// CEL helpers
+
+pub fn cel_compile(source: &str) -> cel::Program {
+    cel::Program::compile(source)
+        .unwrap_or_else(|e| panic!("invalid CEL expression: {source}: {e}"))
+}
+
+pub fn cel_check(
+    program: &cel::Program,
+    ctx: &cel::Context,
+    rule_id: &str,
+    default_message: &str,
+) -> Option<String> {
+    match program.execute(ctx) {
+        Ok(cel::Value::Bool(true)) => None,
+        Ok(cel::Value::Bool(false)) => Some(default_message.to_string()),
+        Ok(cel::Value::String(msg)) => {
+            if msg.is_empty() {
+                None
+            } else {
+                Some(msg.to_string())
+            }
+        }
+        Ok(_) => Some(format!(
+            "CEL rule '{rule_id}' returned non-bool/non-string value"
+        )),
+        Err(e) => Some(format!("CEL rule '{rule_id}' execution error: {e}")),
+    }
+}
+
+pub fn field_to_cel_value_string(val: &str) -> cel::Value {
+    cel::Value::String(std::sync::Arc::new(val.to_string()))
+}
+
+pub fn field_to_cel_value_bytes(val: &[u8]) -> cel::Value {
+    cel::Value::Bytes(std::sync::Arc::new(val.to_vec()))
+}
+
+pub fn field_to_cel_value_bool(val: bool) -> cel::Value {
+    cel::Value::Bool(val)
+}
+
+pub fn field_to_cel_value_int(val: i64) -> cel::Value {
+    cel::Value::Int(val)
+}
+
+pub fn field_to_cel_value_uint(val: u64) -> cel::Value {
+    cel::Value::UInt(val)
+}
+
+pub fn field_to_cel_value_float(val: f64) -> cel::Value {
+    cel::Value::Float(val)
+}
