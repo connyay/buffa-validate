@@ -28,25 +28,34 @@ pub fn generate_field_validation(
     let mut checks = TokenStream::new();
 
     // Required check
-    if rules.required
-        && (is_optional || is_message_type) {
-            let field_path = field_path_str.to_string();
-            checks.extend(quote! {
-                if self.#field_ident.is_none() {
-                    violations.push(::buffa_validate::Violation::new(
-                        #field_path,
-                        "required",
-                        "value is required",
-                    ));
-                }
-            });
-        }
+    if rules.required && (is_optional || is_message_type) {
+        let field_path = field_path_str.to_string();
+        checks.extend(quote! {
+            if self.#field_ident.is_none() {
+                violations.push(::buffa_validate::Violation::new(
+                    #field_path,
+                    "required",
+                    "value is required",
+                ));
+            }
+        });
+    }
 
     // Type-specific constraint checks
     if let Some(type_rules) = &rules.type_rules {
         let constraint_checks =
             generate_type_checks(type_rules, &field_ident, field_path_str, is_optional)?;
-        checks.extend(constraint_checks);
+
+        if rules.ignore == Ignore::IfDefaultValue && !is_optional {
+            let guard = default_value_guard(type_rules, &field_ident);
+            checks.extend(quote! {
+                if #guard {
+                    #constraint_checks
+                }
+            });
+        } else {
+            checks.extend(constraint_checks);
+        }
     }
 
     Ok(checks)
@@ -113,6 +122,30 @@ fn generate_type_checks(
             constraints::repeated::generate(rules, field_ident, field_path)
         }
         TypeRules::Map(rules) => constraints::map::generate(rules, field_ident, field_path),
+        TypeRules::Sint32(rules) => {
+            let inner = constraints::numeric::generate_int(rules, field_path, "i32")?;
+            wrap_optional(field_ident, is_optional, inner)
+        }
+        TypeRules::Sint64(rules) => {
+            let inner = constraints::numeric::generate_int(rules, field_path, "i64")?;
+            wrap_optional(field_ident, is_optional, inner)
+        }
+        TypeRules::Fixed32(rules) => {
+            let inner = constraints::numeric::generate_uint(rules, field_path, "u32")?;
+            wrap_optional(field_ident, is_optional, inner)
+        }
+        TypeRules::Fixed64(rules) => {
+            let inner = constraints::numeric::generate_uint(rules, field_path, "u64")?;
+            wrap_optional(field_ident, is_optional, inner)
+        }
+        TypeRules::Sfixed32(rules) => {
+            let inner = constraints::numeric::generate_int(rules, field_path, "i32")?;
+            wrap_optional(field_ident, is_optional, inner)
+        }
+        TypeRules::Sfixed64(rules) => {
+            let inner = constraints::numeric::generate_int(rules, field_path, "i64")?;
+            wrap_optional(field_ident, is_optional, inner)
+        }
         TypeRules::Bytes(rules) => {
             let inner = constraints::bytes::generate(rules, field_path)?;
             if is_optional {
@@ -131,7 +164,20 @@ fn generate_type_checks(
                 })
             }
         }
-        _ => Ok(TokenStream::new()),
+    }
+}
+
+fn default_value_guard(type_rules: &TypeRules, field_ident: &Ident) -> TokenStream {
+    match type_rules {
+        TypeRules::String(_) => quote! { !self.#field_ident.is_empty() },
+        TypeRules::Bytes(_) => quote! { !self.#field_ident.is_empty() },
+        TypeRules::Bool(_) => quote! { self.#field_ident },
+        TypeRules::Repeated(_) => quote! { !self.#field_ident.is_empty() },
+        TypeRules::Map(_) => quote! { !self.#field_ident.is_empty() },
+        TypeRules::Float(_) => quote! { self.#field_ident != 0.0f32 },
+        TypeRules::Double(_) => quote! { self.#field_ident != 0.0f64 },
+        TypeRules::Enum(_) => quote! { self.#field_ident.to_i32() != 0 },
+        _ => quote! { self.#field_ident != 0 },
     }
 }
 

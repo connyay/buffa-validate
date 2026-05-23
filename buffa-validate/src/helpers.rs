@@ -321,3 +321,114 @@ pub fn check_float_finite(val: f64) -> Option<String> {
         None
     }
 }
+
+pub fn check_string_len_bytes(val: &str, expected: u64) -> Option<String> {
+    if (val.len() as u64) != expected {
+        Some(format!("value byte length must be exactly {expected}"))
+    } else {
+        None
+    }
+}
+
+pub fn bytes_contains(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+pub fn bytes_in(val: &[u8], set: &[&[u8]]) -> bool {
+    set.contains(&val)
+}
+
+pub fn check_string_address(val: &str) -> Option<String> {
+    if val.parse::<std::net::IpAddr>().is_ok() {
+        return None;
+    }
+    check_string_hostname(val)?;
+    Some("value must be a valid hostname or IP address".to_string())
+}
+
+pub fn check_string_ip_with_prefixlen(val: &str) -> Option<String> {
+    check_ip_prefix_common(val, false, None)
+}
+
+pub fn check_string_ipv4_with_prefixlen(val: &str) -> Option<String> {
+    check_ip_prefix_common(val, false, Some(4))
+}
+
+pub fn check_string_ipv6_with_prefixlen(val: &str) -> Option<String> {
+    check_ip_prefix_common(val, false, Some(6))
+}
+
+pub fn check_string_ip_prefix(val: &str) -> Option<String> {
+    check_ip_prefix_common(val, true, None)
+}
+
+pub fn check_string_ipv4_prefix(val: &str) -> Option<String> {
+    check_ip_prefix_common(val, true, Some(4))
+}
+
+pub fn check_string_ipv6_prefix(val: &str) -> Option<String> {
+    check_ip_prefix_common(val, true, Some(6))
+}
+
+fn check_ip_prefix_common(val: &str, must_be_prefix: bool, version: Option<u8>) -> Option<String> {
+    let Some((ip_str, prefix_str)) = val.split_once('/') else {
+        return Some("value must be a valid IP prefix (CIDR notation)".to_string());
+    };
+    let Ok(prefix_len) = prefix_str.parse::<u32>() else {
+        return Some("value must have a valid prefix length".to_string());
+    };
+    match ip_str.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(addr)) => {
+            if version == Some(6) {
+                return Some("value must be an IPv6 prefix".to_string());
+            }
+            if prefix_len > 32 {
+                return Some("IPv4 prefix length must be <= 32".to_string());
+            }
+            if must_be_prefix {
+                let bits = u32::from(addr);
+                let host_bits = 32 - prefix_len;
+                if host_bits < 32 && (bits & ((1u32 << host_bits) - 1)) != 0 {
+                    return Some("value must be a network prefix, not a host address".to_string());
+                }
+            }
+            None
+        }
+        Ok(std::net::IpAddr::V6(addr)) => {
+            if version == Some(4) {
+                return Some("value must be an IPv4 prefix".to_string());
+            }
+            if prefix_len > 128 {
+                return Some("IPv6 prefix length must be <= 128".to_string());
+            }
+            if must_be_prefix {
+                let bits = u128::from(addr);
+                let host_bits = 128 - prefix_len;
+                if host_bits < 128 && (bits & ((1u128 << host_bits) - 1)) != 0 {
+                    return Some("value must be a network prefix, not a host address".to_string());
+                }
+            }
+            None
+        }
+        Err(_) => Some("value must contain a valid IP address".to_string()),
+    }
+}
+
+pub fn check_string_host_and_port(val: &str) -> Option<String> {
+    if let Some(rest) = val.strip_prefix('[') {
+        let Some((_, port_str)) = rest.rsplit_once("]:") else {
+            return Some("value must be a valid host:port pair".to_string());
+        };
+        if port_str.parse::<u16>().is_err() {
+            return Some("value must have a valid port number".to_string());
+        }
+        return None;
+    }
+    let Some((host, port_str)) = val.rsplit_once(':') else {
+        return Some("value must be a valid host:port pair".to_string());
+    };
+    if host.is_empty() || port_str.parse::<u16>().is_err() {
+        return Some("value must be a valid host:port pair".to_string());
+    }
+    None
+}

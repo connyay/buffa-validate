@@ -13,3 +13,8 @@ pub use connect::ValidateExt;
 pub trait Validate {
     fn validate(&self) -> Result<(), Violations>;
 }
+
+#[doc(hidden)]
+pub mod __private {
+    pub use regex::Regex;
+}

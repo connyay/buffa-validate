@@ -73,5 +73,58 @@ pub fn generate(rules: &BytesRules, field_path: &str) -> Result<TokenStream> {
         });
     }
 
+    if let Some(ref contains) = rules.contains {
+        let bytes = contains.as_slice();
+        checks.extend(quote! {
+            if ::buffa_validate::helpers::bytes_contains(__field_val, &[#(#bytes),*]).is_none() {
+                violations.push(::buffa_validate::Violation::new(#field_path, "bytes.contains", "value must contain the specified bytes"));
+            }
+        });
+    }
+
+    if !rules.r#in.is_empty() {
+        let slices: Vec<_> = rules
+            .r#in
+            .iter()
+            .map(|v| {
+                let bytes = v.as_slice();
+                quote! { &[#(#bytes),*][..] }
+            })
+            .collect();
+        checks.extend(quote! {
+            if !::buffa_validate::helpers::bytes_in(__field_val, &[#(#slices),*]) {
+                violations.push(::buffa_validate::Violation::new(#field_path, "bytes.in", "value must be in the allowed set"));
+            }
+        });
+    }
+
+    if !rules.not_in.is_empty() {
+        let slices: Vec<_> = rules
+            .not_in
+            .iter()
+            .map(|v| {
+                let bytes = v.as_slice();
+                quote! { &[#(#bytes),*][..] }
+            })
+            .collect();
+        checks.extend(quote! {
+            if ::buffa_validate::helpers::bytes_in(__field_val, &[#(#slices),*]) {
+                violations.push(::buffa_validate::Violation::new(#field_path, "bytes.not_in", "value must not be in the denied set"));
+            }
+        });
+    }
+
+    if let Some(ref pattern) = rules.pattern {
+        checks.extend(quote! {
+            {
+                static __RE: ::std::sync::OnceLock<::buffa_validate::__private::Regex> = ::std::sync::OnceLock::new();
+                let val_str = ::std::string::String::from_utf8_lossy(__field_val);
+                if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_pattern(&val_str, &__RE, #pattern) {
+                    violations.push(::buffa_validate::Violation::new(#field_path, "bytes.pattern", msg));
+                }
+            }
+        });
+    }
+
     Ok(checks)
 }

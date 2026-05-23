@@ -39,6 +39,14 @@ pub fn generate(rules: &StringRules, field_path: &str) -> Result<TokenStream> {
         });
     }
 
+    if let Some(len) = rules.len_bytes {
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_len_bytes(__field_val, #len) {
+                violations.push(::buffa_validate::Violation::new(#field_path, "string.len_bytes", msg));
+            }
+        });
+    }
+
     if let Some(min) = rules.min_bytes {
         checks.extend(quote! {
             if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_min_bytes(__field_val, #min) {
@@ -58,7 +66,7 @@ pub fn generate(rules: &StringRules, field_path: &str) -> Result<TokenStream> {
     if let Some(ref pattern) = rules.pattern {
         checks.extend(quote! {
             {
-                static __RE: ::std::sync::OnceLock<::regex::Regex> = ::std::sync::OnceLock::new();
+                static __RE: ::std::sync::OnceLock<::buffa_validate::__private::Regex> = ::std::sync::OnceLock::new();
                 if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_pattern(__field_val, &__RE, #pattern) {
                     violations.push(::buffa_validate::Violation::new(#field_path, "string.pattern", msg));
                 }
@@ -125,7 +133,23 @@ pub fn generate(rules: &StringRules, field_path: &str) -> Result<TokenStream> {
             StringWellKnown::Ipv6 => ("check_string_ipv6", "string.ipv6"),
             StringWellKnown::Uri | StringWellKnown::UriRef => ("check_string_uri", "string.uri"),
             StringWellKnown::Uuid | StringWellKnown::Tuuid => ("check_string_uuid", "string.uuid"),
-            _ => return Ok(checks),
+            StringWellKnown::Address => ("check_string_address", "string.address"),
+            StringWellKnown::IpWithPrefixlen => {
+                ("check_string_ip_with_prefixlen", "string.ip_with_prefixlen")
+            }
+            StringWellKnown::Ipv4WithPrefixlen => (
+                "check_string_ipv4_with_prefixlen",
+                "string.ipv4_with_prefixlen",
+            ),
+            StringWellKnown::Ipv6WithPrefixlen => (
+                "check_string_ipv6_with_prefixlen",
+                "string.ipv6_with_prefixlen",
+            ),
+            StringWellKnown::IpPrefix => ("check_string_ip_prefix", "string.ip_prefix"),
+            StringWellKnown::Ipv4Prefix => ("check_string_ipv4_prefix", "string.ipv4_prefix"),
+            StringWellKnown::Ipv6Prefix => ("check_string_ipv6_prefix", "string.ipv6_prefix"),
+            StringWellKnown::HostAndPort => ("check_string_host_and_port", "string.host_and_port"),
+            StringWellKnown::WellKnownRegex(_) => return Ok(checks),
         };
         let helper_ident = proc_macro2::Ident::new(helper_fn, proc_macro2::Span::call_site());
         checks.extend(quote! {

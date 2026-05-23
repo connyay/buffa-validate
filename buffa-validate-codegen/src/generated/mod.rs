@@ -7,9 +7,10 @@ const ONEOF_RULES_EXT_NUMBER: u32 = 1159;
 pub fn extract_field_rules(unknown_fields: &UnknownFields) -> Option<FieldRules> {
     for field in unknown_fields.iter() {
         if field.number == FIELD_RULES_EXT_NUMBER
-            && let UnknownFieldData::LengthDelimited(bytes) = &field.data {
-                return FieldRules::decode_from_slice(bytes).ok();
-            }
+            && let UnknownFieldData::LengthDelimited(bytes) = &field.data
+        {
+            return FieldRules::decode_from_slice(bytes).ok();
+        }
     }
     None
 }
@@ -17,9 +18,10 @@ pub fn extract_field_rules(unknown_fields: &UnknownFields) -> Option<FieldRules>
 pub fn extract_message_rules(unknown_fields: &UnknownFields) -> Option<MessageRules> {
     for field in unknown_fields.iter() {
         if field.number == MESSAGE_RULES_EXT_NUMBER
-            && let UnknownFieldData::LengthDelimited(bytes) = &field.data {
-                return MessageRules::decode_from_slice(bytes).ok();
-            }
+            && let UnknownFieldData::LengthDelimited(bytes) = &field.data
+        {
+            return MessageRules::decode_from_slice(bytes).ok();
+        }
     }
     None
 }
@@ -27,9 +29,10 @@ pub fn extract_message_rules(unknown_fields: &UnknownFields) -> Option<MessageRu
 pub fn extract_oneof_rules(unknown_fields: &UnknownFields) -> Option<OneofRules> {
     for field in unknown_fields.iter() {
         if field.number == ONEOF_RULES_EXT_NUMBER
-            && let UnknownFieldData::LengthDelimited(bytes) = &field.data {
-                return OneofRules::decode_from_slice(bytes).ok();
-            }
+            && let UnknownFieldData::LengthDelimited(bytes) = &field.data
+        {
+            return OneofRules::decode_from_slice(bytes).ok();
+        }
     }
     None
 }
@@ -578,6 +581,48 @@ impl StringRules {
                 }
                 (25, 0) => {
                     rules.strict = Some(decode_varint(&mut buf).ok_or("bad strict")? != 0);
+                }
+                (26, 0) => {
+                    let v = decode_varint(&mut buf).ok_or("bad wk")?;
+                    if v != 0 {
+                        rules.well_known = Some(StringWellKnown::IpWithPrefixlen);
+                    }
+                }
+                (27, 0) => {
+                    let v = decode_varint(&mut buf).ok_or("bad wk")?;
+                    if v != 0 {
+                        rules.well_known = Some(StringWellKnown::Ipv4WithPrefixlen);
+                    }
+                }
+                (28, 0) => {
+                    let v = decode_varint(&mut buf).ok_or("bad wk")?;
+                    if v != 0 {
+                        rules.well_known = Some(StringWellKnown::Ipv6WithPrefixlen);
+                    }
+                }
+                (29, 0) => {
+                    let v = decode_varint(&mut buf).ok_or("bad wk")?;
+                    if v != 0 {
+                        rules.well_known = Some(StringWellKnown::IpPrefix);
+                    }
+                }
+                (30, 0) => {
+                    let v = decode_varint(&mut buf).ok_or("bad wk")?;
+                    if v != 0 {
+                        rules.well_known = Some(StringWellKnown::Ipv4Prefix);
+                    }
+                }
+                (31, 0) => {
+                    let v = decode_varint(&mut buf).ok_or("bad wk")?;
+                    if v != 0 {
+                        rules.well_known = Some(StringWellKnown::Ipv6Prefix);
+                    }
+                }
+                (32, 0) => {
+                    let v = decode_varint(&mut buf).ok_or("bad wk")?;
+                    if v != 0 {
+                        rules.well_known = Some(StringWellKnown::HostAndPort);
+                    }
                 }
                 _ => {
                     skip_field(&mut buf, wire_type).ok_or("skip fail")?;

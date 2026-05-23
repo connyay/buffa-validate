@@ -20,3 +20,78 @@ message SimpleRequired {
     string: { min_len: 1 }
   }];
 }
+
+message StringConstraints {
+  string exact_len = 1 [(buf.validate.field).string.len = 5];
+  string with_pattern = 2 [(buf.validate.field).string.pattern = "^[a-z]+$"];
+  string with_prefix = 3 [(buf.validate.field).string.prefix = "pre_"];
+  string with_suffix = 4 [(buf.validate.field).string.suffix = "_suf"];
+  string with_contains = 5 [(buf.validate.field).string.contains = "needle"];
+  string not_contains = 6 [(buf.validate.field).string.not_contains = "bad"];
+  string in_set = 7 [(buf.validate.field).string = { in: ["a", "b", "c"] }];
+  string const_val = 8 [(buf.validate.field).string.const = "fixed"];
+  string hostname = 9 [(buf.validate.field).string.hostname = true];
+  string uuid = 10 [(buf.validate.field).string.uuid = true];
+  string ip_addr = 11 [(buf.validate.field).string.ip = true];
+  string uri = 12 [(buf.validate.field).string.uri = true];
+  string host_port = 13 [(buf.validate.field).string.host_and_port = true];
+}
+
+message NumericConstraints {
+  int32 int_val = 1 [(buf.validate.field).int32 = { gt: 0, lt: 100 }];
+  int64 long_val = 2 [(buf.validate.field).int64 = { gte: -1000, lte: 1000 }];
+  sint32 signed_val = 3 [(buf.validate.field).sint32 = { gte: -50, lte: 50 }];
+  fixed64 fixed_val = 4 [(buf.validate.field).fixed64 = { lte: 999 }];
+  sfixed32 sfixed_val = 5 [(buf.validate.field).sfixed32 = { gte: -10, lte: 10 }];
+  double dbl_val = 6 [(buf.validate.field).double.finite = true];
+  float flt_val = 7 [(buf.validate.field).float = { gte: 0.0, lte: 1.0 }];
+  uint32 in_set = 8 [(buf.validate.field).uint32 = { in: [1, 2, 3, 5, 8] }];
+  int32 not_in_set = 9 [(buf.validate.field).int32 = { not_in: [0, -1] }];
+  uint64 const_val = 10 [(buf.validate.field).uint64.const = 42];
+}
+
+message BoolConstraint {
+  bool must_be_true = 1 [(buf.validate.field).bool.const = true];
+}
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_ACTIVE = 1;
+  STATUS_INACTIVE = 2;
+}
+
+message EnumConstraint {
+  Status status = 1 [(buf.validate.field).enum.defined_only = true];
+  Status must_active = 2 [(buf.validate.field).enum = { in: [1] }];
+}
+
+message BytesConstraint {
+  bytes data = 1 [(buf.validate.field).bytes = { min_len: 1, max_len: 256 }];
+  bytes prefix_data = 2 [(buf.validate.field).bytes.prefix = "\x89PNG"];
+}
+
+message IgnoreDefaults {
+  string name = 1 [(buf.validate.field) = {
+    ignore: IGNORE_IF_ZERO_VALUE,
+    string: { min_len: 3 }
+  }];
+  uint32 count = 2 [(buf.validate.field) = {
+    ignore: IGNORE_IF_ZERO_VALUE,
+    uint32: { gte: 10 }
+  }];
+}
+
+message RepeatedConstraint {
+  repeated string tags = 1 [(buf.validate.field).repeated = {
+    min_items: 1,
+    max_items: 5
+  }];
+  repeated int32 unique_ids = 2 [(buf.validate.field).repeated.unique = true];
+}
+
+message MapConstraint {
+  map<string, string> labels = 1 [(buf.validate.field).map = {
+    min_pairs: 1,
+    max_pairs: 10
+  }];
+}
