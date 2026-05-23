@@ -721,4 +721,78 @@ mod tests {
         let err = msg.validate().unwrap_err();
         assert!(err.violations.iter().any(|v| v.rule == "dates.order"));
     }
+
+    // ── Connect-rust integration ───────────────────────────────────
+
+    #[test]
+    fn validate_ext_valid_passes() {
+        use buffa_validate::ValidateExt;
+        let msg = CreateUserRequest {
+            name: "Alice".into(),
+            email: "alice@example.com".into(),
+            ..Default::default()
+        };
+        assert!(msg.validated().is_ok());
+    }
+
+    #[test]
+    fn validate_ext_invalid_returns_connect_error() {
+        use buffa_validate::ValidateExt;
+        let msg = CreateUserRequest {
+            name: "".into(),
+            email: "bad".into(),
+            ..Default::default()
+        };
+        let err = msg.validated().unwrap_err();
+        assert_eq!(err.code, connectrpc::ErrorCode::InvalidArgument);
+        assert!(!err.details.is_empty());
+        let detail = &err.details[0];
+        assert_eq!(
+            detail.type_url,
+            "type.googleapis.com/buf.validate.Violations"
+        );
+        let debug = detail.debug.as_ref().unwrap();
+        let violations = debug["violations"].as_array().unwrap();
+        assert!(violations.len() >= 2);
+    }
+
+    #[test]
+    fn validated_service_wrapper_exists() {
+        fn assert_impl<S: UserService>(_s: &ValidatedUserService<S>) {}
+        struct DummyService;
+        impl UserService for DummyService {
+            async fn create_user<'a>(
+                &'a self,
+                _ctx: connectrpc::RequestContext,
+                _request: buffa::view::OwnedView<
+                    super::test::v1::__buffa::view::CreateUserRequestView<'static>,
+                >,
+            ) -> connectrpc::ServiceResult<
+                impl connectrpc::Encodable<CreateUserResponse> + Send + use<'a>,
+            > {
+                connectrpc::Response::ok(CreateUserResponse {
+                    id: "1".into(),
+                    name: "test".into(),
+                    ..Default::default()
+                })
+            }
+            async fn get_user<'a>(
+                &'a self,
+                _ctx: connectrpc::RequestContext,
+                _request: buffa::view::OwnedView<
+                    super::test::v1::__buffa::view::GetUserRequestView<'static>,
+                >,
+            ) -> connectrpc::ServiceResult<
+                impl connectrpc::Encodable<GetUserResponse> + Send + use<'a>,
+            > {
+                connectrpc::Response::ok(GetUserResponse {
+                    id: "1".into(),
+                    name: "test".into(),
+                    ..Default::default()
+                })
+            }
+        }
+        let wrapped = ValidatedUserService(DummyService);
+        assert_impl(&wrapped);
+    }
 }

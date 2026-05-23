@@ -8,7 +8,7 @@ mod connect;
 pub use violation::{Violation, Violations};
 
 #[cfg(feature = "connectrpc")]
-pub use connect::ValidateExt;
+pub use connect::{ValidateExt, violations_to_connect_error};
 
 pub trait Validate {
     fn validate(&self) -> Result<(), Violations>;

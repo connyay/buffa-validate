@@ -154,3 +154,28 @@ message CelMessageConstraint {
     expression: "this.start_date <= this.end_date"
   };
 }
+
+// Phase 5: connect-rust integration
+message CreateUserRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string email = 2 [(buf.validate.field).string.email = true];
+}
+
+message CreateUserResponse {
+  string id = 1;
+  string name = 2;
+}
+
+message GetUserRequest {
+  string id = 1;
+}
+
+message GetUserResponse {
+  string id = 1;
+  string name = 2;
+}
+
+service UserService {
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+}

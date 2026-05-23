@@ -13,7 +13,8 @@ regex = { workspace = true }
 thiserror = { workspace = true }
 
 connectrpc = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 
 [features]
 default = []
-connectrpc = ["dep:connectrpc"]
+connectrpc = ["dep:connectrpc", "dep:serde_json"]

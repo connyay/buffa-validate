@@ -6,7 +6,13 @@ publish = false
 
 [dependencies]
 buffa = { version = "0.6" }
-buffa-validate = { path = "../../buffa-validate" }
+buffa-validate = { path = "../../buffa-validate", features = ["connectrpc"] }
+connectrpc = { version = "0.6" }
+http-body = "1"
+serde = { version = "1", features = ["derive"] }
 
 [build-dependencies]
-buffa-validate-build = { path = "../../buffa-validate-build", default-features = false }
+buffa-validate-build = { path = "../../buffa-validate-build" }
+
+[features]
+default = []

@@ -9,7 +9,7 @@ description = "Build-time integration for buffa-validate: wraps buffa/connectrpc
 [dependencies]
 buffa = { workspace = true }
 buffa-codegen = { workspace = true }
-buffa-validate-codegen = { workspace = true }
+buffa-validate-codegen = { workspace = true, features = [] }
 anyhow = { workspace = true }
 
 tempfile = { workspace = true }
@@ -18,4 +18,4 @@ connectrpc-codegen = { workspace = true, optional = true }
 
 [features]
 default = ["connectrpc"]
-connectrpc = ["dep:connectrpc-codegen"]
+connectrpc = ["dep:connectrpc-codegen", "buffa-validate-codegen/connectrpc"]

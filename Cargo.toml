@@ -24,12 +24,14 @@ connectrpc-codegen = { version = "0.6" }
 connectrpc-build = { version = "0.6" }
 
 anyhow = "1"
+heck = "0.5"
 cel = "0.13"
 quote = "1"
 proc-macro2 = "1"
 syn = { version = "2", features = ["full"] }
 prettyplease = "0.2"
 regex = "1"
+serde_json = "1"
 tempfile = "3"
 thiserror = "2"
 
@@ -37,3 +39,9 @@ thiserror = "2"
 buffa-validate = { path = "buffa-validate", version = "0.1.0" }
 buffa-validate-codegen = { path = "buffa-validate-codegen", version = "0.1.0" }
 buffa-validate-build = { path = "buffa-validate-build", version = "0.1.0" }
+
+# Patch: published connectrpc 0.6.0 has a broken ClientTransport::send signature
+# (returns Result instead of BoxFuture). Fixed on main but not yet released.
+[patch.crates-io]
+connectrpc = { git = "https://github.com/anthropics/connect-rust", rev = "82fd2fa" }
+connectrpc-codegen = { git = "https://github.com/anthropics/connect-rust", rev = "82fd2fa" }
