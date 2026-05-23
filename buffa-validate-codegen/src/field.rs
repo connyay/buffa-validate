@@ -30,15 +30,27 @@ pub fn generate_field_validation(
     // Required check
     if rules.required && (is_optional || is_message_type) {
         let field_path = field_path_str.to_string();
-        checks.extend(quote! {
-            if self.#field_ident.is_none() {
-                violations.push(::buffa_validate::Violation::new(
-                    #field_path,
-                    "required",
-                    "value is required",
-                ));
-            }
-        });
+        if is_message_type {
+            checks.extend(quote! {
+                if !self.#field_ident.is_set() {
+                    violations.push(::buffa_validate::Violation::new(
+                        #field_path,
+                        "required",
+                        "value is required",
+                    ));
+                }
+            });
+        } else {
+            checks.extend(quote! {
+                if self.#field_ident.is_none() {
+                    violations.push(::buffa_validate::Violation::new(
+                        #field_path,
+                        "required",
+                        "value is required",
+                    ));
+                }
+            });
+        }
     }
 
     // Type-specific constraint checks

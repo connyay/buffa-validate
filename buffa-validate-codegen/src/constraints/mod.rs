@@ -2,6 +2,8 @@ pub mod bool;
 pub mod bytes;
 pub mod enumeration;
 pub mod map;
+pub mod message;
 pub mod numeric;
+pub mod oneof;
 pub mod repeated;
 pub mod string;

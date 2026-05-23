@@ -95,3 +95,32 @@ message MapConstraint {
     max_pairs: 10
   }];
 }
+
+// Phase 3: nested message validation
+message Address {
+  string street = 1 [(buf.validate.field).string.min_len = 1];
+  string city = 2 [(buf.validate.field).string.min_len = 1];
+  string zip = 3 [(buf.validate.field).string.pattern = "^[0-9]{5}$"];
+}
+
+message Person {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  Address address = 2 [(buf.validate.field).required = true];
+}
+
+// Phase 3: oneof required
+message OneofRequired {
+  oneof contact {
+    option (buf.validate.oneof).required = true;
+    string email = 1;
+    string phone = 2;
+  }
+}
+
+// Phase 3: map key/value validation
+message MapKeyValueConstraint {
+  map<string, string> metadata = 1 [(buf.validate.field).map = {
+    keys: { string: { min_len: 1 } },
+    values: { string: { min_len: 1 } }
+  }];
+}

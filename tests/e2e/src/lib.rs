@@ -524,4 +524,107 @@ mod tests {
         let err = msg.validate().unwrap_err();
         assert!(err.violations.iter().any(|v| v.field_path == "labels"));
     }
+
+    // ── Nested message validation ──────────────────────────────────
+
+    #[test]
+    fn nested_message_valid_passes() {
+        let msg = Person {
+            name: "Alice".into(),
+            address: buffa::MessageField::some(Address {
+                street: "123 Main St".into(),
+                city: "Springfield".into(),
+                zip: "12345".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn nested_message_required_missing_fails() {
+        let msg = Person {
+            name: "Alice".into(),
+            ..Default::default()
+        };
+        let err = msg.validate().unwrap_err();
+        assert!(
+            err.violations
+                .iter()
+                .any(|v| v.field_path == "address" && v.rule == "required")
+        );
+    }
+
+    #[test]
+    fn nested_message_invalid_child_fails() {
+        let msg = Person {
+            name: "Alice".into(),
+            address: buffa::MessageField::some(Address {
+                street: "".into(),
+                city: "Springfield".into(),
+                zip: "bad".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let err = msg.validate().unwrap_err();
+        assert!(
+            err.violations
+                .iter()
+                .any(|v| v.field_path == "address.street")
+        );
+        assert!(err.violations.iter().any(|v| v.field_path == "address.zip"));
+    }
+
+    // ── Oneof required ─────────────────────────────────────────────
+
+    #[test]
+    fn oneof_required_set_passes() {
+        let msg = OneofRequired {
+            contact: Some(oneof_required::Contact::Email("a@b.com".into())),
+            ..Default::default()
+        };
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn oneof_required_unset_fails() {
+        let msg = OneofRequired::default();
+        let err = msg.validate().unwrap_err();
+        assert!(err.violations.iter().any(|v| v.field_path == "contact"));
+    }
+
+    // ── Map key/value validation ───────────────────────────────────
+
+    #[test]
+    fn map_key_value_valid_passes() {
+        let mut msg = MapKeyValueConstraint::default();
+        msg.metadata.insert("key".into(), "value".into());
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn map_empty_key_fails() {
+        let mut msg = MapKeyValueConstraint::default();
+        msg.metadata.insert("".into(), "value".into());
+        let err = msg.validate().unwrap_err();
+        assert!(
+            err.violations
+                .iter()
+                .any(|v| v.rule == "map.keys.string.min_len")
+        );
+    }
+
+    #[test]
+    fn map_empty_value_fails() {
+        let mut msg = MapKeyValueConstraint::default();
+        msg.metadata.insert("key".into(), "".into());
+        let err = msg.validate().unwrap_err();
+        assert!(
+            err.violations
+                .iter()
+                .any(|v| v.rule == "map.values.string.min_len")
+        );
+    }
 }
