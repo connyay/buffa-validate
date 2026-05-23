@@ -756,46 +756,6 @@ mod tests {
         assert!(violations.len() >= 2);
     }
 
-    #[test]
-    fn validated_service_wrapper_exists() {
-        fn assert_impl<S: UserService>(_s: &ValidatedUserService<S>) {}
-        struct DummyService;
-        impl UserService for DummyService {
-            async fn create_user<'a>(
-                &'a self,
-                _ctx: connectrpc::RequestContext,
-                _request: buffa::view::OwnedView<
-                    super::test::v1::__buffa::view::CreateUserRequestView<'static>,
-                >,
-            ) -> connectrpc::ServiceResult<
-                impl connectrpc::Encodable<CreateUserResponse> + Send + use<'a>,
-            > {
-                connectrpc::Response::ok(CreateUserResponse {
-                    id: "1".into(),
-                    name: "test".into(),
-                    ..Default::default()
-                })
-            }
-            async fn get_user<'a>(
-                &'a self,
-                _ctx: connectrpc::RequestContext,
-                _request: buffa::view::OwnedView<
-                    super::test::v1::__buffa::view::GetUserRequestView<'static>,
-                >,
-            ) -> connectrpc::ServiceResult<
-                impl connectrpc::Encodable<GetUserResponse> + Send + use<'a>,
-            > {
-                connectrpc::Response::ok(GetUserResponse {
-                    id: "1".into(),
-                    name: "test".into(),
-                    ..Default::default()
-                })
-            }
-        }
-        let wrapped = ValidatedUserService(DummyService);
-        assert_impl(&wrapped);
-    }
-
     // ── View type validation ──────────────────────────────────────────
 
     #[test]

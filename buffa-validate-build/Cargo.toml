@@ -4,18 +4,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Build-time integration for buffa-validate: wraps buffa/connectrpc codegen with validation"
+description = "Build-time integration for buffa-validate: generates validation companions as a post-pass"
 
 [dependencies]
 buffa = { workspace = true }
 buffa-codegen = { workspace = true }
-buffa-validate-codegen = { workspace = true, features = [] }
+buffa-validate-codegen = { workspace = true }
 anyhow = { workspace = true }
 
 tempfile = { workspace = true }
-
-connectrpc-codegen = { workspace = true, optional = true }
-
-[features]
-default = ["connectrpc"]
-connectrpc = ["dep:connectrpc-codegen", "buffa-validate-codegen/connectrpc"]

@@ -20,7 +20,6 @@ buffa-codegen = { version = "0.6" }
 buffa-build = { version = "0.6" }
 buffa-descriptor = { version = "0.6" }
 connectrpc = { version = "0.6" }
-connectrpc-codegen = { version = "0.6" }
 connectrpc-build = { version = "0.6" }
 
 anyhow = "1"
@@ -45,3 +44,4 @@ buffa-validate-build = { path = "buffa-validate-build", version = "0.1.0" }
 [patch.crates-io]
 connectrpc = { git = "https://github.com/anthropics/connect-rust", rev = "82fd2fa" }
 connectrpc-codegen = { git = "https://github.com/anthropics/connect-rust", rev = "82fd2fa" }
+connectrpc-build = { git = "https://github.com/anthropics/connect-rust", rev = "82fd2fa" }

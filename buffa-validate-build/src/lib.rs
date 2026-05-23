@@ -18,25 +18,21 @@ pub struct Config {
     includes: Vec<PathBuf>,
     out_dir: Option<PathBuf>,
     descriptor_source: DescriptorSource,
-    include_file: Option<String>,
     emit_rerun_directives: bool,
     codegen_config: buffa_codegen::CodeGenConfig,
-    #[cfg(feature = "connectrpc")]
-    connect_options: connectrpc_codegen::codegen::Options,
 }
 
 impl Config {
     pub fn new() -> Self {
+        let mut codegen_config = buffa_codegen::CodeGenConfig::default();
+        codegen_config.generate_views = true;
         Self {
             files: Vec::new(),
             includes: Vec::new(),
             out_dir: None,
             descriptor_source: DescriptorSource::default(),
-            include_file: None,
             emit_rerun_directives: true,
-            codegen_config: buffa_codegen::CodeGenConfig::default(),
-            #[cfg(feature = "connectrpc")]
-            connect_options: connectrpc_codegen::codegen::Options::default(),
+            codegen_config,
         }
     }
 
@@ -73,39 +69,23 @@ impl Config {
     }
 
     #[must_use]
-    pub fn include_file(mut self, name: impl Into<String>) -> Self {
-        self.include_file = Some(name.into());
-        self
-    }
-
-    #[must_use]
     pub fn emit_rerun_directives(mut self, enabled: bool) -> Self {
         self.emit_rerun_directives = enabled;
         self
     }
 
+    /// Override the buffa CodeGenConfig used for type resolution.
+    ///
+    /// Only needed when the upstream build uses non-default settings that
+    /// affect type paths (e.g. `extern_path`). Must match the config used
+    /// by the upstream buffa or connectrpc build.
     #[must_use]
-    pub fn generate_json(mut self, enabled: bool) -> Self {
-        self.codegen_config.generate_json = enabled;
-        #[cfg(feature = "connectrpc")]
-        {
-            self.connect_options.buffa.generate_json = enabled;
-        }
-        self
-    }
-
-    #[must_use]
-    pub fn file_per_package(mut self, enabled: bool) -> Self {
-        self.codegen_config.file_per_package = enabled;
-        #[cfg(feature = "connectrpc")]
-        {
-            self.connect_options.buffa.file_per_package = enabled;
-        }
+    pub fn buffa_config(mut self, config: buffa_codegen::CodeGenConfig) -> Self {
+        self.codegen_config = config;
         self
     }
 
     pub fn compile(self) -> Result<()> {
-        let relative_includes = self.out_dir.is_some();
         let out_dir = match self.out_dir {
             Some(d) => d,
             None => std::env::var_os("OUT_DIR")
@@ -140,65 +120,25 @@ impl Config {
         let fds = FileDescriptorSet::decode_from_slice(&descriptor_bytes)
             .map_err(|e| anyhow!("failed to decode FileDescriptorSet: {e}"))?;
 
-        // 2. Generate message types (+ service code if connectrpc feature)
-        #[cfg(feature = "connectrpc")]
-        let mut generated = connectrpc_codegen::codegen::generate_files(
+        // 2. Generate validation companions
+        let companions = buffa_validate_codegen::generate_validation(
             &fds.file,
             &files_to_generate,
-            &self.connect_options,
+            &self.codegen_config,
         )?;
 
-        #[cfg(not(feature = "connectrpc"))]
-        let mut generated =
-            buffa_codegen::generate(&fds.file, &files_to_generate, &self.codegen_config)
-                .map_err(|e| anyhow!("buffa-codegen failed: {e}"))?;
-
-        // 3. Generate validation companions
-        let codegen_config_for_validate = {
-            #[cfg(feature = "connectrpc")]
-            {
-                self.connect_options.buffa.clone()
-            }
-            #[cfg(not(feature = "connectrpc"))]
-            {
-                self.codegen_config.clone()
-            }
-        };
-        let validation_companions = buffa_validate_codegen::generate_validation(
-            &fds.file,
-            &files_to_generate,
-            &codegen_config_for_validate,
-        )?;
-
-        // 4. Merge validation companions into stitchers
-        if !validation_companions.is_empty() {
-            buffa_codegen::apply_companions(&mut generated, validation_companions);
+        if companions.is_empty() {
+            return Ok(());
         }
 
-        // 5. Write all files
-        std::fs::create_dir_all(&out_dir)
-            .with_context(|| format!("failed to create out_dir '{}'", out_dir.display()))?;
-
-        let mut entries: Vec<(String, String)> = Vec::new();
-        for file in &generated {
-            let path = out_dir.join(&file.name);
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            write_if_changed(&path, file.content.as_bytes())?;
-            if file.kind == buffa_codegen::GeneratedFileKind::PackageMod {
-                entries.push((file.name.clone(), file.package.clone()));
-            }
+        // 3. Write companion files and patch existing stitcher files
+        for comp in &companions {
+            let comp_path = out_dir.join(&comp.name);
+            write_if_changed(&comp_path, comp.content.as_bytes())?;
+            patch_stitcher(&out_dir, &comp.package, &comp.name)?;
         }
 
-        // 6. Optional include file
-        if let Some(ref include_name) = self.include_file {
-            let include_src = generate_include_file(&entries, relative_includes);
-            let include_path = out_dir.join(include_name);
-            write_if_changed(&include_path, include_src.as_bytes())?;
-        }
-
-        // 7. Cargo rerun directives
+        // 4. Cargo rerun directives
         if self.emit_rerun_directives {
             match &self.descriptor_source {
                 DescriptorSource::Precompiled(p) => {
@@ -221,6 +161,37 @@ impl Default for Config {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn patch_stitcher(out_dir: &Path, package: &str, companion_name: &str) -> Result<()> {
+    let stitcher_path = find_stitcher(out_dir, package)?;
+    let content = std::fs::read_to_string(&stitcher_path)
+        .with_context(|| format!("failed to read stitcher '{}'", stitcher_path.display()))?;
+
+    let include_line = format!("include!(\"{companion_name}\");");
+    if content.contains(&include_line) {
+        return Ok(());
+    }
+
+    let patched = format!("{content}{include_line}\n");
+    std::fs::write(&stitcher_path, patched.as_bytes())
+        .with_context(|| format!("failed to patch stitcher '{}'", stitcher_path.display()))
+}
+
+fn find_stitcher(out_dir: &Path, package: &str) -> Result<PathBuf> {
+    let mod_path = out_dir.join(format!("{package}.mod.rs"));
+    if mod_path.exists() {
+        return Ok(mod_path);
+    }
+    let pkg_path = out_dir.join(format!("{package}.rs"));
+    if pkg_path.exists() {
+        return Ok(pkg_path);
+    }
+    bail!(
+        "no stitcher file found for package '{package}' in {}; \
+         ensure the upstream buffa or connectrpc build runs first",
+        out_dir.display()
+    )
 }
 
 fn write_if_changed(path: &Path, content: &[u8]) -> std::io::Result<()> {
@@ -301,13 +272,4 @@ fn proto_relative_names(files: &[PathBuf]) -> Vec<String> {
         .iter()
         .map(|f| f.to_string_lossy().replace('\\', "/"))
         .collect()
-}
-
-fn generate_include_file(entries: &[(String, String)], relative: bool) -> String {
-    let include_mode = if relative {
-        buffa_codegen::IncludeMode::Relative("")
-    } else {
-        buffa_codegen::IncludeMode::OutDir
-    };
-    buffa_codegen::generate_module_tree(entries, include_mode, false)
 }

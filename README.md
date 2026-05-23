@@ -4,11 +4,11 @@ Rust implementation of [protovalidate](https://buf.build/docs/protovalidate/) fo
 
 ## Crates
 
-| Crate                    | Purpose                                                                        |
-| ------------------------ | ------------------------------------------------------------------------------ |
-| `buffa-validate`         | Runtime library: `Validate` trait, `Violations` type, connect-rust integration |
-| `buffa-validate-codegen` | Code generation library (used by build crate)                                  |
-| `buffa-validate-build`   | `build.rs` integration, replaces both `buffa-build` and `connectrpc-build`     |
+| Crate                    | Purpose                                                                    |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `buffa-validate`         | Runtime library: `Validate` trait, `Violations` type, ConnectRPC helpers   |
+| `buffa-validate-codegen` | Code generation library (used by build crate)                              |
+| `buffa-validate-build`   | `build.rs` post-pass that adds validation to existing buffa/connectrpc output |
 
 ## Quick start
 
@@ -22,19 +22,28 @@ buffa-validate = { version = "0.1", features = ["connectrpc"] }
 connectrpc = "0.6"
 
 [build-dependencies]
+connectrpc-build = "0.6"
 buffa-validate-build = "0.1"
 ```
 
 ### 2. Write your build.rs
 
-`buffa-validate-build` replaces both `buffa-build` and `connectrpc-build`. It runs message, service, and validation codegen in one step.
+`buffa-validate-build` runs as a post-pass after your normal buffa or connect-rust build. It generates `impl Validate` companions and patches the existing module tree to include them.
 
 ```rust
 fn main() {
-    buffa_validate_build::Config::new()
+    // Step 1: normal connect-rust build (or buffa-build)
+    connectrpc_build::Config::new()
         .files(&["proto/service.proto"])
         .includes(&["proto/"])
         .include_file("_include.rs")
+        .compile()
+        .unwrap();
+
+    // Step 2: add validation impls
+    buffa_validate_build::Config::new()
+        .files(&["proto/service.proto"])
+        .includes(&["proto/"])
         .compile()
         .unwrap();
 }
@@ -76,29 +85,24 @@ for v in &err.violations {
 
 ## Connect-rust integration
 
-### ValidateExt trait
+Enable the `connectrpc` feature on `buffa-validate` to get the `ValidateExt` trait.
 
-`.validated()` is an extension method on any type implementing `Validate`. Returns `Result<&Self, ConnectError>`:
+`.validated()` is an extension method on any type implementing `Validate`. Returns `Result<&Self, ConnectError>` with structured error details:
 
 ```rust
 use buffa_validate::ValidateExt;
 
-async fn create_user(req: CreateUserRequest) -> connectrpc::ServiceResult<Response> {
+async fn create_user(
+    &self,
+    ctx: connectrpc::RequestContext,
+    req: OwnedCreateUserRequestView,
+) -> connectrpc::ServiceResult<impl Encodable<CreateUserResponse> + Send> {
     req.validated()?; // returns ConnectError::InvalidArgument on failure
     // ...
 }
 ```
 
-### Generated service wrappers
-
-For each service with validated request types, a `ValidatedServiceName` wrapper is generated:
-
-```rust
-let server = ValidatedUserService(MyUserServiceImpl);
-// Requests are validated before reaching your handlers
-```
-
-The wrapper validates request messages (including view types) before forwarding to the inner service. Client-streaming RPCs pass through without validation.
+Auto-deref means this works directly on `OwnedView<FooView<'static>>` (connect-rust's request type) without any conversion.
 
 ## Supported constraints
 
@@ -131,13 +135,13 @@ The wrapper validates request messages (including view types) before forwarding 
 
 ## View type support
 
-Validation is generated for both owned types and buffa view types. Rust's `Deref` coercion means the same validation body works for both, so `FooView<'a>` validates identically to `Foo`. In practice this means `OwnedView<FooView<'static>>` (connect-rust's request type) can be validated in place without converting to an owned message.
+Validation is generated for both owned types and buffa view types. `FooView<'a>` validates identically to `Foo`, and `OwnedView<FooView<'static>>` (connect-rust's request type) can be validated in place without converting to an owned message.
 
 ## Architecture
 
-Codegen follows buffa's companion file pattern:
+`buffa-validate-build` is a post-processing step that composes with your existing build:
 
-1. `buffa-validate-build` acquires descriptors via protoc/buf
-2. Message and service types are generated (via `buffa-codegen` or `connectrpc-codegen`)
+1. Your upstream build (`connectrpc-build` or `buffa-build`) generates message types, service traits, and module stitchers as usual
+2. `buffa-validate-build` acquires the same descriptors via protoc/buf
 3. `buffa-validate-codegen` reads `buf.validate.*` extensions from field/message/oneof options and generates `impl Validate` blocks in companion `.__validate.rs` files
-4. `buffa-codegen::apply_companions()` merges validation impls into the module tree
+4. The companion files are written to `$OUT_DIR` and the existing stitcher files are patched to include them

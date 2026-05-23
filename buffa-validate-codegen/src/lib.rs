@@ -3,8 +3,6 @@ mod field;
 pub mod generated;
 mod message;
 mod rules;
-#[cfg(feature = "connectrpc")]
-mod service;
 
 use anyhow::Result;
 use buffa_codegen::generated::descriptor::FileDescriptorProto;
@@ -26,13 +24,7 @@ pub fn generate_validation(
 
         let package = file.package.clone().unwrap_or_default();
 
-        let mut tokens = message::generate_file_validations(file, &package, &ctx)?;
-
-        #[cfg(feature = "connectrpc")]
-        {
-            let service_tokens = service::generate_file_services(file, &ctx)?;
-            tokens.extend(service_tokens);
-        }
+        let tokens = message::generate_file_validations(file, &package, &ctx)?;
 
         if tokens.is_empty() {
             continue;

@@ -13,6 +13,7 @@ http-body = "1"
 serde = { version = "1", features = ["derive"] }
 
 [build-dependencies]
+connectrpc-build = { version = "0.6" }
 buffa-validate-build = { path = "../../buffa-validate-build" }
 
 [features]
