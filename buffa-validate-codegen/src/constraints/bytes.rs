@@ -31,15 +31,27 @@ pub fn generate(rules: &BytesRules, field_path: &str) -> Result<TokenStream> {
 
     if let Some(min) = rules.min_len {
         let min_usize = min as usize;
-        checks.extend(quote! {
-            if __field_val.len() < #min_usize {
-                violations.push(::buffa_validate::Violation::new(
-                    #field_path,
-                    "bytes.min_len",
-                    ::std::format!("value byte length must be at least {}", #min),
-                ));
-            }
-        });
+        if min_usize == 1 {
+            checks.extend(quote! {
+                if __field_val.is_empty() {
+                    violations.push(::buffa_validate::Violation::new(
+                        #field_path,
+                        "bytes.min_len",
+                        ::std::format!("value byte length must be at least {}", #min),
+                    ));
+                }
+            });
+        } else {
+            checks.extend(quote! {
+                if __field_val.len() < #min_usize {
+                    violations.push(::buffa_validate::Violation::new(
+                        #field_path,
+                        "bytes.min_len",
+                        ::std::format!("value byte length must be at least {}", #min),
+                    ));
+                }
+            });
+        }
     }
 
     if let Some(max) = rules.max_len {

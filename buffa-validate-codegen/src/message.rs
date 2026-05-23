@@ -211,6 +211,7 @@ fn generate_message_validation(
 
     if has_any_rules {
         out.extend(quote! {
+            #[allow(clippy::needless_borrow, clippy::useless_asref)]
             impl ::buffa_validate::Validate for #type_tokens {
                 fn validate(&self) -> ::core::result::Result<(), ::buffa_validate::Violations> {
                     let mut violations = ::std::vec::Vec::new();
@@ -229,6 +230,7 @@ fn generate_message_validation(
         {
             let field_checks_view = field_checks.clone();
             out.extend(quote! {
+                #[allow(clippy::needless_borrow, clippy::useless_asref)]
                 impl ::buffa_validate::Validate for #view_tokens<'_> {
                     fn validate(&self) -> ::core::result::Result<(), ::buffa_validate::Violations> {
                         let mut violations = ::std::vec::Vec::new();
