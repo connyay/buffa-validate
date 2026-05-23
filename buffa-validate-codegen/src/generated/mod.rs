@@ -930,6 +930,26 @@ impl NumericRules<f32> {
                         .push(f32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]));
                     buf = &buf[4..];
                 }
+                (6, 2) => {
+                    let d = decode_length_delimited(&mut buf).ok_or("bad in packed")?;
+                    let mut sub = d;
+                    while sub.len() >= 4 {
+                        rules
+                            .r#in
+                            .push(f32::from_le_bytes([sub[0], sub[1], sub[2], sub[3]]));
+                        sub = &sub[4..];
+                    }
+                }
+                (7, 2) => {
+                    let d = decode_length_delimited(&mut buf).ok_or("bad not_in packed")?;
+                    let mut sub = d;
+                    while sub.len() >= 4 {
+                        rules
+                            .not_in
+                            .push(f32::from_le_bytes([sub[0], sub[1], sub[2], sub[3]]));
+                        sub = &sub[4..];
+                    }
+                }
                 (8, 0) => {
                     rules.finite = decode_varint(&mut buf).ok_or("bad finite")? != 0;
                 }
@@ -1001,6 +1021,26 @@ impl NumericRules<f64> {
                         .not_in
                         .push(f64::from_le_bytes(buf[..8].try_into().unwrap()));
                     buf = &buf[8..];
+                }
+                (6, 2) => {
+                    let d = decode_length_delimited(&mut buf).ok_or("bad in packed")?;
+                    let mut sub = d;
+                    while sub.len() >= 8 {
+                        rules
+                            .r#in
+                            .push(f64::from_le_bytes(sub[..8].try_into().unwrap()));
+                        sub = &sub[8..];
+                    }
+                }
+                (7, 2) => {
+                    let d = decode_length_delimited(&mut buf).ok_or("bad not_in packed")?;
+                    let mut sub = d;
+                    while sub.len() >= 8 {
+                        rules
+                            .not_in
+                            .push(f64::from_le_bytes(sub[..8].try_into().unwrap()));
+                        sub = &sub[8..];
+                    }
                 }
                 (8, 0) => {
                     rules.finite = decode_varint(&mut buf).ok_or("bad finite")? != 0;
@@ -1119,6 +1159,19 @@ macro_rules! impl_fixed_numeric_decoder {
                             6 => rules.r#in.push(val),
                             7 => rules.not_in.push(val),
                             _ => {}
+                        }
+                    } else if wire_type == 2 && (field_number == 6 || field_number == 7) {
+                        let d = decode_length_delimited(&mut buf).ok_or("bad packed fixed")?;
+                        let mut sub = d;
+                        while sub.len() >= $size {
+                            let bytes: [u8; $size] = sub[..$size].try_into().unwrap();
+                            let val: $t = $convert(bytes);
+                            sub = &sub[$size..];
+                            match field_number {
+                                6 => rules.r#in.push(val),
+                                7 => rules.not_in.push(val),
+                                _ => {}
+                            }
                         }
                     } else {
                         skip_field(&mut buf, wire_type).ok_or("skip fail")?;

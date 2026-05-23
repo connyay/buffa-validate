@@ -53,34 +53,45 @@ pub fn generate_field_validation(
         }
     }
 
-    // Type-specific constraint checks
-    if let Some(type_rules) = &rules.type_rules {
-        let constraint_checks =
-            generate_type_checks(type_rules, &field_ident, field_path_str, is_optional)?;
+    let constraint_checks = if let Some(type_rules) = &rules.type_rules {
+        generate_type_checks(type_rules, &field_ident, field_path_str, is_optional)?
+    } else {
+        TokenStream::new()
+    };
 
-        if rules.ignore == Ignore::IfDefaultValue && !is_optional {
-            let guard = default_value_guard(type_rules, &field_ident);
-            checks.extend(quote! {
-                if #guard {
-                    #constraint_checks
-                }
-            });
-        } else {
-            checks.extend(constraint_checks);
-        }
-    }
-
-    // Field-level CEL rules
-    if !rules.cel.is_empty() {
-        let cel_checks = constraints::cel::generate_field_cel(
+    let cel_checks = if !rules.cel.is_empty() {
+        constraints::cel::generate_field_cel(
             &rules.cel,
             &field_ident,
             field_path_str,
             rules.type_rules.as_ref(),
             is_optional,
             field_desc.r#type,
-        )?;
-        checks.extend(cel_checks);
+        )?
+    } else {
+        TokenStream::new()
+    };
+
+    let all_field_checks = quote! {
+        #constraint_checks
+        #cel_checks
+    };
+
+    if !all_field_checks.is_empty() {
+        if rules.ignore == Ignore::IfDefaultValue && !is_optional {
+            if let Some(type_rules) = &rules.type_rules {
+                let guard = default_value_guard(type_rules, &field_ident);
+                checks.extend(quote! {
+                    if #guard {
+                        #all_field_checks
+                    }
+                });
+            } else {
+                checks.extend(all_field_checks);
+            }
+        } else {
+            checks.extend(all_field_checks);
+        }
     }
 
     Ok(checks)

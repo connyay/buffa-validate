@@ -85,17 +85,17 @@ fn generate_message_validation(
             == Some(
                 buffa_codegen::generated::descriptor::field_descriptor_proto::Type::TYPE_MESSAGE,
             );
+        let field_rules = rules::field_rules(field_desc);
 
-        if let Some(field_rules) = rules::field_rules(field_desc) {
+        if let Some(ref fr) = field_rules {
             has_any_rules = true;
-            let check =
-                field::generate_field_validation(field_desc, &field_rules, field_name, fqn, ctx)?;
+            let check = field::generate_field_validation(field_desc, fr, field_name, fqn, ctx)?;
             field_checks.extend(check);
         }
 
         if is_message_type {
             let field_type_name = field_desc.type_name.as_deref().unwrap_or("");
-            let is_map_or_repeated = rules::field_rules(field_desc)
+            let is_map_or_repeated = field_rules
                 .as_ref()
                 .and_then(|r| r.type_rules.as_ref())
                 .is_some_and(|tr| {
@@ -105,10 +105,14 @@ fn generate_message_validation(
                             | crate::generated::TypeRules::Repeated(_)
                     )
                 });
+            let is_ignored = field_rules
+                .as_ref()
+                .is_some_and(|r| r.ignore == crate::generated::Ignore::Always);
             if !field_type_name.starts_with(".google.protobuf.")
                 && !is_map_or_repeated
-                && rules::field_rules(field_desc).is_some()
+                && !is_ignored
             {
+                has_any_rules = true;
                 let field_ident = buffa_codegen::idents::make_field_ident(field_name);
                 field_checks.extend(constraints::message::generate_nested_validation(
                     &field_ident,
@@ -119,7 +123,7 @@ fn generate_message_validation(
         }
     }
 
-    // Validate repeated items (message types that implement Validate)
+    // Validate repeated/map items
     for field_desc in &message.field {
         let field_name = field_desc.name.as_deref().unwrap_or("");
         let is_message_type = field_desc.r#type
@@ -128,23 +132,50 @@ fn generate_message_validation(
             );
 
         if let Some(field_rules) = rules::field_rules(field_desc) {
-            if let Some(crate::generated::TypeRules::Repeated(_)) = field_rules.type_rules
-                && is_message_type
+            if field_rules.ignore == crate::generated::Ignore::Always {
+                continue;
+            }
+
+            if let Some(crate::generated::TypeRules::Repeated(ref repeated_rules)) =
+                field_rules.type_rules
             {
-                let field_type_name = field_desc.type_name.as_deref().unwrap_or("");
-                if !field_type_name.starts_with(".google.protobuf.") {
-                    has_any_rules = true;
-                    let field_ident = buffa_codegen::idents::make_field_ident(field_name);
-                    field_checks.extend(quote! {
+                if is_message_type {
+                    let field_type_name = field_desc.type_name.as_deref().unwrap_or("");
+                    if !field_type_name.starts_with(".google.protobuf.") {
+                        has_any_rules = true;
+                        let field_ident = buffa_codegen::idents::make_field_ident(field_name);
+                        field_checks.extend(quote! {
                             for (__idx, __item) in self.#field_ident.iter().enumerate() {
                                 if let ::core::result::Result::Err(nested_violations) = ::buffa_validate::Validate::validate(__item) {
                                     for mut v in nested_violations.violations {
-                                        v.field_path = ::std::format!("{}[{}].{}", #field_name, __idx, v.field_path);
+                                        if v.field_path.is_empty() {
+                                            v.field_path = ::std::format!("{}[{}]", #field_name, __idx);
+                                        } else {
+                                            v.field_path = ::std::format!("{}[{}].{}", #field_name, __idx, v.field_path);
+                                        }
                                         violations.push(v);
                                     }
                                 }
                             }
                         });
+                    }
+                }
+
+                if let Some(ref items) = repeated_rules.items
+                    && let Some(ref type_rules) = items.type_rules
+                    && !is_message_type
+                {
+                    let item_checks = generate_repeated_item_type_checks(type_rules, field_name)?;
+                    if !item_checks.is_empty() {
+                        has_any_rules = true;
+                        let field_ident = buffa_codegen::idents::make_field_ident(field_name);
+                        field_checks.extend(quote! {
+                            for (__idx, __item) in self.#field_ident.iter().enumerate() {
+                                let __item_path = ::std::format!("{}[{}]", #field_name, __idx);
+                                #item_checks
+                            }
+                        });
+                    }
                 }
             }
             if let Some(crate::generated::TypeRules::Map(ref map_rules)) = field_rules.type_rules
@@ -271,6 +302,33 @@ fn generate_map_key_checks(type_rules: &TypeRules, field_name: &str) -> Result<T
             }
             Ok(checks)
         }
+        TypeRules::Int32(rules) => generate_map_numeric_inline(rules, field_name, true, "map.keys"),
+        TypeRules::Int64(rules) => generate_map_numeric_inline(rules, field_name, true, "map.keys"),
+        TypeRules::Uint32(rules) => {
+            generate_map_numeric_inline(rules, field_name, true, "map.keys")
+        }
+        TypeRules::Uint64(rules) => {
+            generate_map_numeric_inline(rules, field_name, true, "map.keys")
+        }
+        TypeRules::Sint32(rules) => {
+            generate_map_numeric_inline(rules, field_name, true, "map.keys")
+        }
+        TypeRules::Sint64(rules) => {
+            generate_map_numeric_inline(rules, field_name, true, "map.keys")
+        }
+        TypeRules::Fixed32(rules) => {
+            generate_map_numeric_inline(rules, field_name, true, "map.keys")
+        }
+        TypeRules::Fixed64(rules) => {
+            generate_map_numeric_inline(rules, field_name, true, "map.keys")
+        }
+        TypeRules::Sfixed32(rules) => {
+            generate_map_numeric_inline(rules, field_name, true, "map.keys")
+        }
+        TypeRules::Sfixed64(rules) => {
+            generate_map_numeric_inline(rules, field_name, true, "map.keys")
+        }
+        TypeRules::Bool(rules) => generate_map_bool_inline(rules, field_name, true, "map.keys"),
         _ => Ok(TokenStream::new()),
     }
 }
@@ -297,6 +355,457 @@ fn generate_map_value_checks(type_rules: &TypeRules, field_name: &str) -> Result
             }
             Ok(checks)
         }
+        TypeRules::Int32(rules) => {
+            generate_map_numeric_inline(rules, field_name, false, "map.values")
+        }
+        TypeRules::Int64(rules) => {
+            generate_map_numeric_inline(rules, field_name, false, "map.values")
+        }
+        TypeRules::Uint32(rules) => {
+            generate_map_numeric_inline(rules, field_name, false, "map.values")
+        }
+        TypeRules::Uint64(rules) => {
+            generate_map_numeric_inline(rules, field_name, false, "map.values")
+        }
+        TypeRules::Sint32(rules) => {
+            generate_map_numeric_inline(rules, field_name, false, "map.values")
+        }
+        TypeRules::Sint64(rules) => {
+            generate_map_numeric_inline(rules, field_name, false, "map.values")
+        }
+        TypeRules::Fixed32(rules) => {
+            generate_map_numeric_inline(rules, field_name, false, "map.values")
+        }
+        TypeRules::Fixed64(rules) => {
+            generate_map_numeric_inline(rules, field_name, false, "map.values")
+        }
+        TypeRules::Sfixed32(rules) => {
+            generate_map_numeric_inline(rules, field_name, false, "map.values")
+        }
+        TypeRules::Sfixed64(rules) => {
+            generate_map_numeric_inline(rules, field_name, false, "map.values")
+        }
+        TypeRules::Float(rules) => {
+            generate_map_numeric_inline(rules, field_name, false, "map.values")
+        }
+        TypeRules::Double(rules) => {
+            generate_map_numeric_inline(rules, field_name, false, "map.values")
+        }
+        TypeRules::Bool(rules) => generate_map_bool_inline(rules, field_name, false, "map.values"),
+        TypeRules::Enum(rules) => generate_map_enum_inline(rules, field_name, "map.values"),
         _ => Ok(TokenStream::new()),
     }
+}
+
+fn generate_map_numeric_inline<T: quote::ToTokens + std::fmt::Display>(
+    rules: &crate::generated::NumericRules<T>,
+    field_name: &str,
+    is_key: bool,
+    prefix: &str,
+) -> Result<TokenStream> {
+    let mut checks = TokenStream::new();
+    let val_expr = if is_key {
+        quote! { *__key }
+    } else {
+        quote! { *__val }
+    };
+
+    if let Some(ref c) = rules.r#const {
+        let rule_id = format!("{prefix}.const");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_const(#val_expr, #c) {
+                let __path = ::std::format!("{}[{:?}]", #field_name, __key);
+                violations.push(::buffa_validate::Violation::new(__path, #rule_id, msg));
+            }
+        });
+    }
+    if let Some(ref bound) = rules.gt {
+        let rule_id = format!("{prefix}.gt");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_gt(#val_expr, #bound) {
+                let __path = ::std::format!("{}[{:?}]", #field_name, __key);
+                violations.push(::buffa_validate::Violation::new(__path, #rule_id, msg));
+            }
+        });
+    }
+    if let Some(ref bound) = rules.gte {
+        let rule_id = format!("{prefix}.gte");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_gte(#val_expr, #bound) {
+                let __path = ::std::format!("{}[{:?}]", #field_name, __key);
+                violations.push(::buffa_validate::Violation::new(__path, #rule_id, msg));
+            }
+        });
+    }
+    if let Some(ref bound) = rules.lt {
+        let rule_id = format!("{prefix}.lt");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_lt(#val_expr, #bound) {
+                let __path = ::std::format!("{}[{:?}]", #field_name, __key);
+                violations.push(::buffa_validate::Violation::new(__path, #rule_id, msg));
+            }
+        });
+    }
+    if let Some(ref bound) = rules.lte {
+        let rule_id = format!("{prefix}.lte");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_lte(#val_expr, #bound) {
+                let __path = ::std::format!("{}[{:?}]", #field_name, __key);
+                violations.push(::buffa_validate::Violation::new(__path, #rule_id, msg));
+            }
+        });
+    }
+    if !rules.r#in.is_empty() {
+        let values = &rules.r#in;
+        let rule_id = format!("{prefix}.in");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_in(&#val_expr, &[#(#values),*]) {
+                let __path = ::std::format!("{}[{:?}]", #field_name, __key);
+                violations.push(::buffa_validate::Violation::new(__path, #rule_id, msg));
+            }
+        });
+    }
+    if !rules.not_in.is_empty() {
+        let values = &rules.not_in;
+        let rule_id = format!("{prefix}.not_in");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_not_in(&#val_expr, &[#(#values),*]) {
+                let __path = ::std::format!("{}[{:?}]", #field_name, __key);
+                violations.push(::buffa_validate::Violation::new(__path, #rule_id, msg));
+            }
+        });
+    }
+    Ok(checks)
+}
+
+fn generate_map_bool_inline(
+    rules: &crate::generated::BoolRules,
+    field_name: &str,
+    is_key: bool,
+    prefix: &str,
+) -> Result<TokenStream> {
+    let mut checks = TokenStream::new();
+    let val_expr = if is_key {
+        quote! { *__key }
+    } else {
+        quote! { *__val }
+    };
+    if let Some(expected) = rules.r#const {
+        let rule_id = format!("{prefix}.bool.const");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_bool_const(#val_expr, #expected) {
+                let __path = ::std::format!("{}[{:?}]", #field_name, __key);
+                violations.push(::buffa_validate::Violation::new(__path, #rule_id, msg));
+            }
+        });
+    }
+    Ok(checks)
+}
+
+fn generate_map_enum_inline(
+    rules: &crate::generated::EnumRules,
+    field_name: &str,
+    prefix: &str,
+) -> Result<TokenStream> {
+    let mut checks = TokenStream::new();
+    if let Some(c) = rules.r#const {
+        let rule_id = format!("{prefix}.enum.const");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_const(__val.to_i32(), #c) {
+                let __path = ::std::format!("{}[{:?}]", #field_name, __key);
+                violations.push(::buffa_validate::Violation::new(__path, #rule_id, msg));
+            }
+        });
+    }
+    if rules.defined_only {
+        let rule_id = format!("{prefix}.enum.defined_only");
+        checks.extend(quote! {
+            if __val.is_unknown() {
+                let __path = ::std::format!("{}[{:?}]", #field_name, __key);
+                violations.push(::buffa_validate::Violation::new(__path, #rule_id, "value must be a defined enum value"));
+            }
+        });
+    }
+    if !rules.r#in.is_empty() {
+        let values = &rules.r#in;
+        let rule_id = format!("{prefix}.enum.in");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_in(&__val.to_i32(), &[#(#values),*]) {
+                let __path = ::std::format!("{}[{:?}]", #field_name, __key);
+                violations.push(::buffa_validate::Violation::new(__path, #rule_id, msg));
+            }
+        });
+    }
+    if !rules.not_in.is_empty() {
+        let values = &rules.not_in;
+        let rule_id = format!("{prefix}.enum.not_in");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_not_in(&__val.to_i32(), &[#(#values),*]) {
+                let __path = ::std::format!("{}[{:?}]", #field_name, __key);
+                violations.push(::buffa_validate::Violation::new(__path, #rule_id, msg));
+            }
+        });
+    }
+    Ok(checks)
+}
+
+fn generate_repeated_item_type_checks(
+    type_rules: &TypeRules,
+    _field_name: &str,
+) -> Result<TokenStream> {
+    match type_rules {
+        TypeRules::String(rules) => generate_repeated_string_checks(rules),
+        TypeRules::Int32(rules) => generate_repeated_numeric_checks(rules, "repeated.items"),
+        TypeRules::Int64(rules) => generate_repeated_numeric_checks(rules, "repeated.items"),
+        TypeRules::Uint32(rules) => generate_repeated_numeric_checks(rules, "repeated.items"),
+        TypeRules::Uint64(rules) => generate_repeated_numeric_checks(rules, "repeated.items"),
+        TypeRules::Sint32(rules) => generate_repeated_numeric_checks(rules, "repeated.items"),
+        TypeRules::Sint64(rules) => generate_repeated_numeric_checks(rules, "repeated.items"),
+        TypeRules::Fixed32(rules) => generate_repeated_numeric_checks(rules, "repeated.items"),
+        TypeRules::Fixed64(rules) => generate_repeated_numeric_checks(rules, "repeated.items"),
+        TypeRules::Sfixed32(rules) => generate_repeated_numeric_checks(rules, "repeated.items"),
+        TypeRules::Sfixed64(rules) => generate_repeated_numeric_checks(rules, "repeated.items"),
+        TypeRules::Float(rules) => generate_repeated_numeric_checks(rules, "repeated.items"),
+        TypeRules::Double(rules) => generate_repeated_numeric_checks(rules, "repeated.items"),
+        TypeRules::Bool(rules) => {
+            let mut checks = TokenStream::new();
+            if let Some(expected) = rules.r#const {
+                checks.extend(quote! {
+                    if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_bool_const(*__item, #expected) {
+                        violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.bool.const", msg));
+                    }
+                });
+            }
+            Ok(checks)
+        }
+        TypeRules::Enum(rules) => {
+            let mut checks = TokenStream::new();
+            if rules.defined_only {
+                checks.extend(quote! {
+                    if __item.is_unknown() {
+                        violations.push(::buffa_validate::Violation::new(
+                            __item_path.clone(), "repeated.items.enum.defined_only", "value must be a defined enum value",
+                        ));
+                    }
+                });
+            }
+            if let Some(c) = rules.r#const {
+                checks.extend(quote! {
+                    if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_const(__item.to_i32(), #c) {
+                        violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.enum.const", msg));
+                    }
+                });
+            }
+            if !rules.r#in.is_empty() {
+                let values = &rules.r#in;
+                checks.extend(quote! {
+                    if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_in(&__item.to_i32(), &[#(#values),*]) {
+                        violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.enum.in", msg));
+                    }
+                });
+            }
+            if !rules.not_in.is_empty() {
+                let values = &rules.not_in;
+                checks.extend(quote! {
+                    if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_not_in(&__item.to_i32(), &[#(#values),*]) {
+                        violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.enum.not_in", msg));
+                    }
+                });
+            }
+            Ok(checks)
+        }
+        TypeRules::Bytes(rules) => generate_repeated_bytes_checks(rules),
+        _ => Ok(TokenStream::new()),
+    }
+}
+
+fn generate_repeated_string_checks(rules: &crate::generated::StringRules) -> Result<TokenStream> {
+    let mut checks = TokenStream::new();
+    if let Some(ref c) = rules.r#const {
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_const(__item, #c) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.string.const", msg));
+            }
+        });
+    }
+    if let Some(len) = rules.len {
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_len(__item, #len) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.string.len", msg));
+            }
+        });
+    }
+    if let Some(min) = rules.min_len {
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_min_len(__item, #min) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.string.min_len", msg));
+            }
+        });
+    }
+    if let Some(max) = rules.max_len {
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_max_len(__item, #max) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.string.max_len", msg));
+            }
+        });
+    }
+    if let Some(ref pattern) = rules.pattern {
+        checks.extend(quote! {
+            {
+                static __RE: ::std::sync::OnceLock<::buffa_validate::__private::Regex> = ::std::sync::OnceLock::new();
+                if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_pattern(__item, &__RE, #pattern) {
+                    violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.string.pattern", msg));
+                }
+            }
+        });
+    }
+    if let Some(ref prefix) = rules.prefix {
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_prefix(__item, #prefix) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.string.prefix", msg));
+            }
+        });
+    }
+    if let Some(ref suffix) = rules.suffix {
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_suffix(__item, #suffix) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.string.suffix", msg));
+            }
+        });
+    }
+    if let Some(ref contains) = rules.contains {
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_contains(__item, #contains) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.string.contains", msg));
+            }
+        });
+    }
+    if let Some(ref not_contains) = rules.not_contains {
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_not_contains(__item, #not_contains) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.string.not_contains", msg));
+            }
+        });
+    }
+    if !rules.r#in.is_empty() {
+        let values: Vec<&str> = rules.r#in.iter().map(|s| s.as_str()).collect();
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_in(__item, &[#(#values),*]) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.string.in", msg));
+            }
+        });
+    }
+    if !rules.not_in.is_empty() {
+        let values: Vec<&str> = rules.not_in.iter().map(|s| s.as_str()).collect();
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_string_not_in(__item, &[#(#values),*]) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), "repeated.items.string.not_in", msg));
+            }
+        });
+    }
+    Ok(checks)
+}
+
+fn generate_repeated_numeric_checks<T: quote::ToTokens + std::fmt::Display>(
+    rules: &crate::generated::NumericRules<T>,
+    prefix: &str,
+) -> Result<TokenStream> {
+    let mut checks = TokenStream::new();
+    if let Some(ref c) = rules.r#const {
+        let rule_id = format!("{prefix}.const");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_const(*__item, #c) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), #rule_id, msg));
+            }
+        });
+    }
+    if let Some(ref bound) = rules.gt {
+        let rule_id = format!("{prefix}.gt");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_gt(*__item, #bound) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), #rule_id, msg));
+            }
+        });
+    }
+    if let Some(ref bound) = rules.gte {
+        let rule_id = format!("{prefix}.gte");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_gte(*__item, #bound) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), #rule_id, msg));
+            }
+        });
+    }
+    if let Some(ref bound) = rules.lt {
+        let rule_id = format!("{prefix}.lt");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_lt(*__item, #bound) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), #rule_id, msg));
+            }
+        });
+    }
+    if let Some(ref bound) = rules.lte {
+        let rule_id = format!("{prefix}.lte");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_lte(*__item, #bound) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), #rule_id, msg));
+            }
+        });
+    }
+    if !rules.r#in.is_empty() {
+        let values = &rules.r#in;
+        let rule_id = format!("{prefix}.in");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_in(&*__item, &[#(#values),*]) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), #rule_id, msg));
+            }
+        });
+    }
+    if !rules.not_in.is_empty() {
+        let values = &rules.not_in;
+        let rule_id = format!("{prefix}.not_in");
+        checks.extend(quote! {
+            if let ::core::option::Option::Some(msg) = ::buffa_validate::helpers::check_not_in(&*__item, &[#(#values),*]) {
+                violations.push(::buffa_validate::Violation::new(__item_path.clone(), #rule_id, msg));
+            }
+        });
+    }
+    Ok(checks)
+}
+
+fn generate_repeated_bytes_checks(rules: &crate::generated::BytesRules) -> Result<TokenStream> {
+    let mut checks = TokenStream::new();
+    if let Some(len) = rules.len {
+        let len_usize = len as usize;
+        checks.extend(quote! {
+            if __item.len() != #len_usize {
+                violations.push(::buffa_validate::Violation::new(
+                    __item_path.clone(), "repeated.items.bytes.len",
+                    ::std::format!("value byte length must be exactly {}", #len),
+                ));
+            }
+        });
+    }
+    if let Some(min) = rules.min_len {
+        let min_usize = min as usize;
+        checks.extend(quote! {
+            if __item.len() < #min_usize {
+                violations.push(::buffa_validate::Violation::new(
+                    __item_path.clone(), "repeated.items.bytes.min_len",
+                    ::std::format!("value byte length must be at least {}", #min),
+                ));
+            }
+        });
+    }
+    if let Some(max) = rules.max_len {
+        let max_usize = max as usize;
+        checks.extend(quote! {
+            if __item.len() > #max_usize {
+                violations.push(::buffa_validate::Violation::new(
+                    __item_path.clone(), "repeated.items.bytes.max_len",
+                    ::std::format!("value byte length must be at most {}", #max),
+                ));
+            }
+        });
+    }
+    Ok(checks)
 }

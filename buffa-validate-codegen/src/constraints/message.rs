@@ -11,7 +11,11 @@ pub fn generate_nested_validation(
             if let ::core::option::Option::Some(ref __nested) = self.#field_ident.as_option() {
                 if let ::core::result::Result::Err(nested_violations) = ::buffa_validate::Validate::validate(*__nested) {
                     for mut v in nested_violations.violations {
-                        v.field_path = ::std::format!("{}.{}", #field_path, v.field_path);
+                        if v.field_path.is_empty() {
+                            v.field_path = ::std::string::String::from(#field_path);
+                        } else {
+                            v.field_path = ::std::format!("{}.{}", #field_path, v.field_path);
+                        }
                         violations.push(v);
                     }
                 }
@@ -21,7 +25,11 @@ pub fn generate_nested_validation(
         quote! {
             if let ::core::result::Result::Err(nested_violations) = ::buffa_validate::Validate::validate(&self.#field_ident) {
                 for mut v in nested_violations.violations {
-                    v.field_path = ::std::format!("{}.{}", #field_path, v.field_path);
+                    if v.field_path.is_empty() {
+                        v.field_path = ::std::string::String::from(#field_path);
+                    } else {
+                        v.field_path = ::std::format!("{}.{}", #field_path, v.field_path);
+                    }
                     violations.push(v);
                 }
             }

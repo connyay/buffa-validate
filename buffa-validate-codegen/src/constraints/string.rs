@@ -131,7 +131,8 @@ pub fn generate(rules: &StringRules, field_path: &str) -> Result<TokenStream> {
             StringWellKnown::Ip => ("check_string_ip", "string.ip"),
             StringWellKnown::Ipv4 => ("check_string_ipv4", "string.ipv4"),
             StringWellKnown::Ipv6 => ("check_string_ipv6", "string.ipv6"),
-            StringWellKnown::Uri | StringWellKnown::UriRef => ("check_string_uri", "string.uri"),
+            StringWellKnown::Uri => ("check_string_uri", "string.uri"),
+            StringWellKnown::UriRef => ("check_string_uri_ref", "string.uri_ref"),
             StringWellKnown::Uuid | StringWellKnown::Tuuid => ("check_string_uuid", "string.uuid"),
             StringWellKnown::Address => ("check_string_address", "string.address"),
             StringWellKnown::IpWithPrefixlen => {

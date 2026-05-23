@@ -198,6 +198,16 @@ pub fn check_string_uri(val: &str) -> Option<String> {
     None
 }
 
+pub fn check_string_uri_ref(val: &str) -> Option<String> {
+    if val.is_empty() {
+        return Some("value must be a valid URI-reference".to_string());
+    }
+    if val.contains(':') && check_string_uri(val).is_some() {
+        return Some("value must be a valid URI-reference".to_string());
+    }
+    None
+}
+
 // Numeric helpers
 
 pub fn check_gt<T: PartialOrd + std::fmt::Display>(val: T, bound: T) -> Option<String> {
