@@ -1,0 +1,19 @@
+[package]
+name = "buffa-validate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Runtime validation for buffa protobuf messages using protovalidate rules"
+
+[dependencies]
+buffa = { workspace = true }
+cel = { workspace = true }
+regex = { workspace = true }
+thiserror = { workspace = true }
+
+connectrpc = { workspace = true, optional = true }
+
+[features]
+default = []
+connectrpc = ["dep:connectrpc"]

@@ -1,0 +1,39 @@
+[workspace]
+members = [
+    "buffa-validate",
+    "buffa-validate-codegen",
+    "buffa-validate-build",
+    "tests/e2e",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+buffa = { version = "0.6" }
+buffa-types = { version = "0.6" }
+buffa-codegen = { version = "0.6" }
+buffa-build = { version = "0.6" }
+buffa-descriptor = { version = "0.6" }
+connectrpc = { version = "0.6" }
+connectrpc-codegen = { version = "0.6" }
+connectrpc-build = { version = "0.6" }
+
+anyhow = "1"
+cel = "0.13"
+quote = "1"
+proc-macro2 = "1"
+syn = { version = "2", features = ["full"] }
+prettyplease = "0.2"
+regex = "1"
+tempfile = "3"
+thiserror = "2"
+
+# Workspace-internal
+buffa-validate = { path = "buffa-validate", version = "0.1.0" }
+buffa-validate-codegen = { path = "buffa-validate-codegen", version = "0.1.0" }
+buffa-validate-build = { path = "buffa-validate-build", version = "0.1.0" }

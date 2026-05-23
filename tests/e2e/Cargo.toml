@@ -1,0 +1,12 @@
+[package]
+name = "buffa-validate-e2e"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+buffa = { version = "0.6" }
+buffa-validate = { path = "../../buffa-validate" }
+
+[build-dependencies]
+buffa-validate-build = { path = "../../buffa-validate-build", default-features = false }
